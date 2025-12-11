@@ -2,13 +2,13 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
-use syn::{parse2, parse_str, Arm, Ident, ItemImpl, Stmt, Type};
+use syn::{Arm, Ident, ItemImpl, Stmt, Type, parse_str, parse2};
 
+use crate::GenContext;
 use crate::models::{
   OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
 };
 use crate::utils::{escape_snake_case, get_or_panic};
-use crate::GenContext;
 
 pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
   let mut token_stream_list: Vec<ItemImpl> = vec![];
@@ -86,10 +86,8 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
           } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
             children_validator_stmt_list.push(
               parse2(quote! {
-                if let Some(#child_name_ident) = &self.#child_name_ident {
-                  if !#child_name_ident.validate()? {
-                    return Ok(false);
-                  }
+                if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
+                  return Ok(false);
                 }
               })
               .unwrap(),
@@ -203,10 +201,8 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
           } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
             children_validator_stmt_list.push(
               parse2(quote! {
-                if let Some(#child_name_ident) = &self.#child_name_ident {
-                  if !#child_name_ident.validate()? {
-                    return Ok(false);
-                  }
+                if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
+                  return Ok(false);
                 }
               })
               .unwrap(),
@@ -581,10 +577,12 @@ fn gen_attr_validator_stmt_list(
   }
 
   if required && validator_count > 0 {
-    let mut stmt_list = vec![parse2(quote! {
-      let mut validator_results: Vec<bool> = vec![true; #validator_count];
-    })
-    .unwrap()];
+    let mut stmt_list = vec![
+      parse2(quote! {
+        let mut validator_results: Vec<bool> = vec![true; #validator_count];
+      })
+      .unwrap(),
+    ];
 
     stmt_list.extend(attr_validator_stmt_list);
 
@@ -599,18 +597,20 @@ fn gen_attr_validator_stmt_list(
 
     stmt_list
   } else if validator_count > 0 {
-    vec![parse2(quote! {
-      if let Some(#attr_name_ident) = &self.#attr_name_ident {
-        let mut validator_results: Vec<bool> = vec![true; #validator_count];
+    vec![
+      parse2(quote! {
+        if let Some(#attr_name_ident) = &self.#attr_name_ident {
+          let mut validator_results: Vec<bool> = vec![true; #validator_count];
 
-        #( #attr_validator_stmt_list )*
+          #( #attr_validator_stmt_list )*
 
-        if !validator_results.into_iter().any(|x| x) {
-          return Ok(false);
+          if !validator_results.into_iter().any(|x| x) {
+            return Ok(false);
+          }
         }
-      }
-    })
-    .unwrap()]
+      })
+      .unwrap(),
+    ]
   } else {
     vec![]
   }

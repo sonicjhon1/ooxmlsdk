@@ -1,7 +1,7 @@
 use quick_xml::{
-  encoding::EncodingError,
-  events::{attributes::AttrError, Event},
   Decoder, Reader,
+  encoding::EncodingError,
+  events::{Event, attributes::AttrError},
 };
 use std::{
   io::BufRead,
@@ -142,7 +142,7 @@ pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
 }
 
 macro_rules! expect_event_start {
-  ($xml_reader:expr, $xml_event:expr, $tag_prefix:expr, $tag:expr) => {{
+  ($xml_reader:expr_2021, $xml_event:expr_2021, $tag_prefix:expr_2021, $tag:expr_2021) => {{
     if let Some((e, empty_tag)) = $xml_event {
       (e, empty_tag)
     } else {
@@ -151,7 +151,7 @@ macro_rules! expect_event_start {
           quick_xml::events::Event::Start(b) => break (b, false),
           quick_xml::events::Event::Empty(b) => break (b, true),
           quick_xml::events::Event::Eof => {
-            return Err(super::super::common::SdkError::UnknownError)
+            return Err(super::super::common::SdkError::UnknownError);
           }
           _ => continue,
         }

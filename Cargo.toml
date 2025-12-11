@@ -1,12 +1,12 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = ["crates/ooxmlsdk", "crates/ooxmlsdk-build", "examples/*"]
 
 [workspace.package]
 version = "0.3.0"
-edition = "2021"
-rust-version = "1.73"
-authors = ["KaiserY"]
+edition = "2024"
+rust-version = "1.92"
+authors = ["KaiserY", "sonicjhon1"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/KaiserY/ooxmlsdk"
 documentation = "https://docs.rs/ooxmlsdk"

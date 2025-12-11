@@ -18,7 +18,7 @@ pub fn escape_upper_camel_case(name: String) -> String {
 }
 
 macro_rules! get_or_panic {
-  ($map:expr, $key:expr) => {
+  ($map:expr_2021, $key:expr_2021) => {
     $map.get($key).ok_or_else(|| format!("{:?}", $key)).unwrap()
   };
 }
