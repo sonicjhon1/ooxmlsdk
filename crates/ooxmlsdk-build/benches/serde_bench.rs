@@ -1,9 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use pprof::criterion::{Output, PProfProfiler};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-const XML: &'static str = r#"<?xml version="1.0" encoding="UTF-8"?>
+const XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" PartName="/xl/workbook.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml" PartName="/xl/worksheets/sheet1.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml" PartName="/xl/worksheets/sheet2.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml" PartName="/xl/worksheets/sheet3.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.theme+xml" PartName="/xl/theme/theme1.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml" PartName="/xl/styles.xml"/><Override ContentType="application/vnd.openxmlformats-package.core-properties+xml" PartName="/docProps/core.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" PartName="/docProps/app.xml"/><Override ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml" PartName="/xl/sharedStrings.xml"/><Override ContentType="application/vnd.ms-excel.person+xml" PartName="/xl/persons/person.xml"/></Types>"#;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -55,20 +54,20 @@ fn to_str() {
 }
 
 fn bench_from_str(c: &mut Criterion) {
-  c.bench_function("from_str", |b| b.iter(|| from_str()));
+  c.bench_function("from_str", |b| b.iter(from_str));
 }
 
 fn bench_serde_from_str(c: &mut Criterion) {
-  c.bench_function("serde_from_str", |b| b.iter(|| serde_from_str()));
+  c.bench_function("serde_from_str", |b| b.iter(serde_from_str));
 }
 
 fn bench_to_str(c: &mut Criterion) {
-  c.bench_function("to_str", |b| b.iter(|| to_str()));
+  c.bench_function("to_str", |b| b.iter(to_str));
 }
 
 criterion_group!(
   name = benches;
-  config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+  config = Criterion::default();
   targets = bench_from_str, bench_serde_from_str, bench_to_str
 );
 

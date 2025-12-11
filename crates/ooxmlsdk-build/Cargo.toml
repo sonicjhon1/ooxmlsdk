@@ -43,7 +43,6 @@ zip = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-pprof = { workspace = true }
 
 [[bench]]
 name = "serde_bench"
