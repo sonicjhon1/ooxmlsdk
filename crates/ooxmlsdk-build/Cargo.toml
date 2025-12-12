@@ -48,3 +48,6 @@ criterion = { workspace = true }
 [[bench]]
 name = "serde_bench"
 harness = false
+
+[lints]
+workspace = true

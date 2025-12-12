@@ -1,4 +1,4 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
@@ -6,7 +6,9 @@ use syn::{Arm, Ident, ItemFn, ItemImpl, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
-    models::{OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
+    models::{
+        OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
+    },
     utils::{escape_snake_case, escape_upper_camel_case, get_or_panic},
 };
 
@@ -29,18 +31,14 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
         let mut variants: Vec<Arm> = vec![];
 
-        for facet in &e.facets {
-            let variant_value = &facet.value;
-
-            let variant_ident: Ident = if facet.name.is_empty() {
-                parse_str(&escape_upper_camel_case(facet.value.to_upper_camel_case())).unwrap()
-            } else {
-                parse_str(&escape_upper_camel_case(facet.name.to_upper_camel_case())).unwrap()
-            };
+        for OpenXmlSchemaEnumFacet { name, value, .. } in &e.facets {
+            let variant_ident_raw = if name.is_empty() { value } else { name };
+            let variant_ident: Ident =
+                parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
 
             variants.push(
                 parse2(quote! {
-                  Self::#variant_ident => #variant_value.to_string(),
+                  Self::#variant_ident => #value.to_string(),
                 })
                 .unwrap(),
             );
@@ -161,23 +159,16 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
                 for p in &t.particle.items {
-                    let child = child_map
-                        .get(p.name.as_str())
-                        .ok_or(format!("{:?}", p.name))
-                        .unwrap();
+                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
-                    let child_name_ident: Ident = if child.property_name.is_empty() {
-                        let child_name_list: Vec<&str> = child.name.split('/').collect();
-
-                        let child_rename_ser_str = child_name_list
-                            .last()
-                            .ok_or(format!("{:?}", child.name))
-                            .unwrap();
-
-                        parse_str(&child_rename_ser_str.to_snake_case()).unwrap()
+                    let child_name_ident_raw = if child.property_name.is_empty() {
+                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
                     } else {
-                        parse_str(&escape_snake_case(child.property_name.to_snake_case())).unwrap()
+                        &child.property_name
                     };
+
+                    let child_name_ident: Ident =
+                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
                     if p.occurs.is_empty() {
                         child_stmt_list.push(
@@ -310,23 +301,16 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
                 for p in &t.particle.items {
-                    let child = child_map
-                        .get(p.name.as_str())
-                        .ok_or(format!("{:?}", p.name))
-                        .unwrap();
+                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
-                    let child_name_ident: Ident = if child.property_name.is_empty() {
-                        let child_name_list: Vec<&str> = child.name.split('/').collect();
-
-                        let child_rename_ser_str = child_name_list
-                            .last()
-                            .ok_or(format!("{:?}", child.name))
-                            .unwrap();
-
-                        parse_str(&child_rename_ser_str.to_snake_case()).unwrap()
+                    let child_name_ident_raw = if child.property_name.is_empty() {
+                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
                     } else {
-                        parse_str(&escape_snake_case(child.property_name.to_snake_case())).unwrap()
+                        &child.property_name
                     };
+
+                    let child_name_ident: Ident =
+                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
                     if p.occurs.is_empty() {
                         child_stmt_list.push(
@@ -561,22 +545,31 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
     }
 }
 
-fn gen_attr(attr: &OpenXmlSchemaTypeAttribute) -> TokenStream {
-    let attr_name_str = if attr.q_name.starts_with(':') {
-        &attr.q_name[1..attr.q_name.len()]
+fn gen_attr(
+    OpenXmlSchemaTypeAttribute {
+        q_name,
+        property_name,
+        validators,
+        ..
+    }: &OpenXmlSchemaTypeAttribute,
+) -> TokenStream {
+    let attr_name_str = if q_name.starts_with(':') {
+        &q_name[1..q_name.len()]
     } else {
-        &attr.q_name
+        q_name
     };
 
-    let attr_name_ident: Ident = if attr.property_name.is_empty() {
-        parse_str(&escape_snake_case(attr.q_name.to_snake_case())).unwrap()
+    let attr_name_ident_raw = if property_name.is_empty() {
+        q_name
     } else {
-        parse_str(&escape_snake_case(attr.property_name.to_snake_case())).unwrap()
+        property_name
     };
+
+    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_ident_raw)).unwrap();
 
     let mut required = false;
 
-    for validator in &attr.validators {
+    for validator in validators {
         if validator.name == "RequiredValidator" {
             required = true;
         }

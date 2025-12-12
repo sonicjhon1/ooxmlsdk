@@ -1,4 +1,4 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
@@ -7,8 +7,8 @@ use syn::{Ident, ItemEnum, Type, Variant, parse_str, parse2};
 use crate::{
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
-        OpenXmlSchemaTypeChild,
+        OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaType,
+        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
     },
     utils::{escape_snake_case, escape_upper_camel_case, get_or_panic},
 };
@@ -26,12 +26,10 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
 
         let mut variants: Vec<Variant> = vec![];
 
-        for (i, facet) in e.facets.iter().enumerate() {
-            let variant_ident: Ident = if facet.name.is_empty() {
-                parse_str(&escape_upper_camel_case(facet.value.to_upper_camel_case())).unwrap()
-            } else {
-                parse_str(&escape_upper_camel_case(facet.name.to_upper_camel_case())).unwrap()
-            };
+        for (i, OpenXmlSchemaEnumFacet { name, value, .. }) in e.facets.iter().enumerate() {
+            let variant_ident_raw = if name.is_empty() { value } else { name };
+            let variant_ident: Ident =
+                parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
 
             if i == 0 {
                 variants.push(
@@ -203,23 +201,31 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
 }
 
 fn gen_attr(
-    attr: &OpenXmlSchemaTypeAttribute,
+    OpenXmlSchemaTypeAttribute {
+        q_name,
+        property_name,
+        r#type,
+        property_comments,
+        version,
+        validators,
+    }: &OpenXmlSchemaTypeAttribute,
     schema_namespace: &OpenXmlNamespace,
     gen_context: &GenContext,
 ) -> TokenStream {
-    let attr_name_ident: Ident = if attr.property_name.is_empty() {
-        parse_str(&escape_snake_case(attr.q_name.to_snake_case())).unwrap()
+    let attr_name_raw = if property_name.is_empty() {
+        q_name
     } else {
-        parse_str(&escape_snake_case(attr.property_name.to_snake_case())).unwrap()
+        property_name
     };
+    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_raw)).unwrap();
 
-    let type_ident: Type = if attr.r#type.starts_with("ListValue<") {
+    let type_ident: Type = if r#type.starts_with("ListValue<") {
         parse_str("String").unwrap()
-    } else if attr.r#type.starts_with("EnumValue<") {
+    } else if r#type.starts_with("EnumValue<") {
         let e_typed_namespace_str =
-            &attr.r#type[attr.r#type.find("<").unwrap() + 1..attr.r#type.rfind(".").unwrap()];
+            &r#type[r#type.find("<").unwrap() + 1..r#type.rfind(".").unwrap()];
 
-        let enum_name = &attr.r#type[attr.r#type.rfind(".").unwrap() + 1..attr.r#type.len() - 1];
+        let enum_name = &r#type[r#type.rfind(".").unwrap() + 1..r#type.len() - 1];
 
         let mut e_prefix = "";
 
@@ -254,28 +260,28 @@ fn gen_attr(
             parse_str(&enum_name.to_upper_camel_case()).unwrap()
         }
     } else {
-        parse_str(&format!("crate::schemas::simple_type::{}", &attr.r#type)).unwrap()
+        parse_str(&format!("crate::schemas::simple_type::{}", &r#type)).unwrap()
     };
 
     let mut required = false;
 
-    for validator in &attr.validators {
+    for validator in validators {
         if validator.name == "RequiredValidator" {
             required = true;
         }
     }
 
-    let property_comments_doc = format!(" {}", attr.property_comments);
+    let property_comments_doc = format!(" {}", property_comments);
 
-    let version_doc = if attr.version.is_empty() {
+    let version_doc = if version.is_empty() {
         " Available in Office2007 and above.".to_string()
     } else {
-        format!(" Available in {} and above.", attr.version)
+        format!(" Available in {} and above.", version)
     };
 
     let qualified_doc = format!(
         " Represents the following attribute in the schema: {}",
-        attr.q_name
+        q_name
     );
 
     if required {
@@ -419,13 +425,12 @@ fn gen_one_sequence_fields(
             parse_str(&child_type.class_name.to_upper_camel_case()).unwrap()
         };
 
-        let child_name_ident: Ident = if child.property_name.is_empty() {
-            let child_last_name = &child.name[child.name.find('/').unwrap() + 1..child.name.len()];
-
-            parse_str(&child_last_name.to_snake_case()).unwrap()
+        let child_name_ident_raw = if child.property_name.is_empty() {
+            &child.name[child.name.find('/').unwrap() + 1..child.name.len()]
         } else {
-            parse_str(&escape_snake_case(child.property_name.to_snake_case())).unwrap()
+            &child.property_name
         };
+        let child_name_ident: Ident = parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
         let property_comments = if child.property_comments.is_empty() {
             " _"

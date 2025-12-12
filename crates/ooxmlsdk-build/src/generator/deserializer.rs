@@ -1,4 +1,4 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::{HashMap, HashSet};
@@ -7,7 +7,7 @@ use syn::{Arm, Ident, ItemFn, ItemImpl, LitByteStr, Stmt, Type, parse_str, parse
 use crate::{
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
+        OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
         OpenXmlSchemaTypeParticle,
     },
     utils::{escape_snake_case, escape_upper_camel_case, get_or_panic},
@@ -32,21 +32,16 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         let mut variants: Vec<Arm> = vec![];
         let mut byte_variants: Vec<Arm> = vec![];
 
-        for facet in &e.facets {
-            let variant_value = &facet.value;
+        for OpenXmlSchemaEnumFacet { name, value, .. } in &e.facets {
+            let variant_ident_raw = if name.is_empty() { value } else { name };
+            let variant_ident: Ident =
+                parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
 
-            let variant_ident: Ident = if facet.name.is_empty() {
-                parse_str(&escape_upper_camel_case(facet.value.to_upper_camel_case())).unwrap()
-            } else {
-                parse_str(&escape_upper_camel_case(facet.name.to_upper_camel_case())).unwrap()
-            };
-
-            let variant_value_literal: LitByteStr =
-                parse_str(&format!("b\"{variant_value}\"")).unwrap();
+            let variant_value_literal: LitByteStr = parse_str(&format!("b\"{value}\"")).unwrap();
 
             variants.push(
                 parse2(quote! {
-                  #variant_value => Ok(Self::#variant_ident),
+                  #value => Ok(Self::#variant_ident),
                 })
                 .unwrap(),
             );
@@ -218,14 +213,14 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 for p in &t.particle.items {
                     let child = get_or_panic!(child_map, p.name.as_str());
 
-                    let child_name_str = if child.property_name.is_empty() {
+                    let child_name_ident_raw = if child.property_name.is_empty() {
                         &child.name[child.name.find('/').unwrap() + 1..child.name.len()]
                     } else {
-                        child.property_name.as_str()
+                        &child.property_name
                     };
 
                     let child_name_ident: Ident =
-                        parse_str(&escape_snake_case(child_name_str.to_snake_case())).unwrap();
+                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
                     if p.occurs.is_empty() {
                         field_declaration_list.push(
@@ -236,12 +231,12 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                         );
 
                         field_unwrap_list.push(
-              parse2(quote! {
-                let #child_name_ident = #child_name_ident
-                  .ok_or_else(|| crate::common::SdkError::CommonError(#child_name_str.to_string()))?;
-              })
-              .unwrap(),
-            );
+                            parse2(quote! {
+                              let #child_name_ident = #child_name_ident
+                                .ok_or_else(|| crate::common::SdkError::CommonError(#child_name_ident_raw.to_string()))?;
+                            })
+                            .unwrap(),
+                        );
                     } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
                         field_declaration_list.push(
                             parse2(quote! {
@@ -311,41 +306,41 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 for p in &t.particle.items {
                     let child = get_or_panic!(child_map, p.name.as_str());
 
-                    let child_name_str = if child.property_name.is_empty() {
+                    let child_name_ident_raw = if child.property_name.is_empty() {
                         &child.name[child.name.find('/').unwrap() + 1..child.name.len()]
                     } else {
                         child.property_name.as_str()
                     };
 
                     let child_name_ident: Ident =
-                        parse_str(&escape_snake_case(child_name_str.to_snake_case())).unwrap();
+                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
                     if p.occurs.is_empty() {
                         field_declaration_list.push(
                             parse2(quote! {
-                              let mut #child_name_ident = None;
+                                let mut #child_name_ident = None;
                             })
                             .unwrap(),
                         );
 
                         field_unwrap_list.push(
-              parse2(quote! {
-                let #child_name_ident = #child_name_ident
-                  .ok_or_else(|| crate::common::SdkError::CommonError(#child_name_str.to_string()))?;
-              })
-              .unwrap(),
-            );
+                            parse2(quote! {
+                                let #child_name_ident = #child_name_ident
+                                    .ok_or_else(|| crate::common::SdkError::CommonError(#child_name_ident_raw.to_string()))?;
+                            })
+                            .unwrap(),
+                        );
                     } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
                         field_declaration_list.push(
                             parse2(quote! {
-                              let mut #child_name_ident = None;
+                                let mut #child_name_ident = None;
                             })
                             .unwrap(),
                         );
                     } else {
                         field_declaration_list.push(
                             parse2(quote! {
-                              let mut #child_name_ident = vec![];
+                                let mut #child_name_ident = vec![];
                             })
                             .unwrap(),
                         );
@@ -423,13 +418,14 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         };
 
         for attr in &attributes {
-            let attr_name_str = if attr.property_name.is_empty() {
-                escape_snake_case(attr.q_name.to_snake_case())
+            let attr_name_ident_raw = if attr.property_name.is_empty() {
+                &attr.q_name
             } else {
-                escape_snake_case(attr.property_name.to_snake_case())
+                &attr.property_name
             };
 
-            let attr_name_ident: Ident = parse_str(&attr_name_str).unwrap();
+            let attr_name_ident: Ident =
+                parse_str(&escape_snake_case(attr_name_ident_raw)).unwrap();
 
             field_declaration_list.push(
                 parse2(quote! {
@@ -450,20 +446,20 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
 
             if required {
                 field_unwrap_list.push(
-          parse2(quote! {
-            let #attr_name_ident = #attr_name_ident
-              .ok_or_else(|| crate::common::SdkError::CommonError(#attr_name_str.to_string()))?;
-          })
-          .unwrap(),
-        )
+                    parse2(quote! {
+                        let #attr_name_ident = #attr_name_ident
+                          .ok_or_else(|| crate::common::SdkError::CommonError(#attr_name_ident_raw.to_string()))?;
+                    })
+                    .unwrap(),
+                )
             }
 
             field_ident_list.push(attr_name_ident);
         }
 
         let mut expect_event_start_stmt: Stmt = parse2(quote! {
-          let (e, empty_tag) =
-            crate::common::expect_event_start(xml_reader, xml_event, #prefix_type_name_literal, #type_name_literal)?;
+            let (e, empty_tag) =
+                crate::common::expect_event_start(xml_reader, xml_event, #prefix_type_name_literal, #type_name_literal)?;
         }).unwrap();
 
         let attr_match_stmt_opt: Option<Stmt> = if (t.base_class == "OpenXmlCompositeElement"
@@ -477,31 +473,31 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                     == "http://schemas.openxmlformats.org/drawingml/2006/picture")
         {
             Some(
-        parse2(quote! {
-          for attr in e.attributes().with_checks(false) {
-            let attr = attr?;
+                parse2(quote! {
+                    for attr in e.attributes().with_checks(false) {
+                        let attr = attr?;
 
-            match attr.key.as_ref() {
-              #( #attr_match_list )*
-              b"xmlns" => {
-                xmlns = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
-              }
-              b"mc:Ignorable" => {
-                mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
-              }
-              key => {
-                if key.starts_with(b"xmlns:") {
-                  xmlns_map.insert(
-                    String::from_utf8_lossy(&key[6..]).to_string(),
-                    attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned(),
-                  );
-                }
-              }
-            }
-          }
-        })
-        .unwrap(),
-      )
+                        match attr.key.as_ref() {
+                            #( #attr_match_list )*
+                            b"xmlns" => {
+                                xmlns = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+                            }
+                            b"mc:Ignorable" => {
+                                mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+                            }
+                            key => {
+                                if key.starts_with(b"xmlns:") {
+                                    xmlns_map.insert(
+                                        String::from_utf8_lossy(&key[6..]).to_string(),
+                                        attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned(),
+                                    );
+                                }
+                            }
+                          }
+                    }
+                })
+                .unwrap(),
+            )
         } else if !attr_match_list.is_empty() {
             Some(
                 parse2(quote! {
@@ -650,13 +646,11 @@ fn gen_from_str_impl(struct_type: &Type) -> ItemImpl {
 
 fn gen_from_reader_fn() -> ItemFn {
     let token_stream = quote! {
-      pub fn from_reader<R: std::io::BufRead>(
-        reader: R,
-      ) -> Result<Self, crate::common::SdkError> {
-        let mut xml_reader = crate::common::from_reader_inner(reader)?;
+        pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, crate::common::SdkError> {
+            let mut xml_reader = crate::common::from_reader_inner(reader)?;
 
-        Self::deserialize_inner(&mut xml_reader, None)
-      }
+            Self::deserialize_inner(&mut xml_reader, None)
+        }
     };
 
     parse_str(&token_stream.to_string()).unwrap()
@@ -674,11 +668,13 @@ fn gen_one_sequence_match_arm(
     let child_suffix_last_name =
         &child_last_name[child_last_name.find(':').unwrap() + 1..child_last_name.len()];
 
-    let child_name_ident: Ident = if child.property_name.is_empty() {
-        parse_str(&child_last_name.to_snake_case()).unwrap()
+    let child_name_ident_raw = if child.property_name.is_empty() {
+        child_last_name
     } else {
-        parse_str(&escape_snake_case(child.property_name.to_snake_case())).unwrap()
+        &child.property_name
     };
+
+    let child_name_ident: Ident = parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
     let child_last_name_literal: LitByteStr =
         parse_str(&format!("b\"{child_last_name}\"")).unwrap();
@@ -792,68 +788,77 @@ fn gen_simple_child_match_arm(first_name: &str, gen_context: &GenContext) -> Arm
         ))
         .unwrap();
 
-        parse2(quote! {
+        return parse2(quote! {
           quick_xml::events::Event::Text(t) => {
             xml_content = Some(#simple_type_name::from_bytes(&t.into_inner())?);
           }
         })
-        .unwrap()
-    } else {
-        let simple_type_str = simple_type_mapping(first_name);
-
-        let enum_type: Type =
-            parse_str(&format!("crate::schemas::simple_type::{simple_type_str}")).unwrap();
-
-        parse2(match simple_type_str {
-            "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
-            | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
-              quick_xml::events::Event::Text(t) => {
-                xml_content = Some(t.decode()?.to_string());
-              }
-            },
-            "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
-              quick_xml::events::Event::Text(t) => {
-                xml_content = Some(crate::common::parse_bool_bytes(&t.into_inner())?);
-              }
-            },
-            "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
-            | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => quote! {
-              quick_xml::events::Event::Text(t) => {
-                xml_content = Some(t.decode()?.parse::<#enum_type>()?);
-              }
-            },
-            _ => panic!("{}", simple_type_str),
-        })
-        .unwrap()
+        .unwrap();
     }
+
+    let simple_type_str = simple_type_mapping(first_name);
+
+    let enum_type: Type =
+        parse_str(&format!("crate::schemas::simple_type::{simple_type_str}")).unwrap();
+
+    return parse2(match simple_type_str {
+        "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
+        | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
+          quick_xml::events::Event::Text(t) => {
+            xml_content = Some(t.decode()?.to_string());
+          }
+        },
+        "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
+          quick_xml::events::Event::Text(t) => {
+            xml_content = Some(crate::common::parse_bool_bytes(&t.into_inner())?);
+          }
+        },
+        "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
+        | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => quote! {
+          quick_xml::events::Event::Text(t) => {
+            xml_content = Some(t.decode()?.parse::<#enum_type>()?);
+          }
+        },
+        _ => panic!("{}", simple_type_str),
+    })
+    .unwrap();
 }
 
-fn gen_field_match_arm(attr: &OpenXmlSchemaTypeAttribute, gen_context: &GenContext) -> Arm {
-    let attr_name_str = if attr.q_name.starts_with(':') {
-        &attr.q_name[1..attr.q_name.len()]
+fn gen_field_match_arm(
+    OpenXmlSchemaTypeAttribute {
+        q_name,
+        property_name,
+        r#type,
+        ..
+    }: &OpenXmlSchemaTypeAttribute,
+    gen_context: &GenContext,
+) -> Arm {
+    let attr_name_str = if q_name.starts_with(':') {
+        &q_name[1..q_name.len()]
     } else {
-        &attr.q_name
+        q_name
     };
 
-    let attr_name_ident: Ident = if attr.property_name.is_empty() {
-        parse_str(&escape_snake_case(attr.q_name.to_snake_case())).unwrap()
+    let attr_name_ident_raw = if property_name.is_empty() {
+        q_name
     } else {
-        parse_str(&escape_snake_case(attr.property_name.to_snake_case())).unwrap()
+        property_name
     };
+    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_ident_raw)).unwrap();
 
     let attr_name_literal: LitByteStr = parse_str(&format!("b\"{attr_name_str}\"")).unwrap();
 
-    parse2(if attr.r#type.starts_with("ListValue<") {
+    parse2(if r#type.starts_with("ListValue<") {
     quote! {
       #attr_name_literal => {
-        #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+        #attr_name_ident = Some(decode_and_unescape_value(xml_reader.decoder())?.into_owned());
       }
     }
-  } else if attr.r#type.starts_with("EnumValue<") {
+  } else if r#type.starts_with("EnumValue<") {
     let e_typed_namespace_str =
-      &attr.r#type[attr.r#type.find("<").unwrap() + 1..attr.r#type.rfind(".").unwrap()];
+      &r#type[r#type.find("<").unwrap() + 1..r#type.rfind(".").unwrap()];
 
-    let enum_name = &attr.r#type[attr.r#type.rfind(".").unwrap() + 1..attr.r#type.len() - 1];
+    let enum_name = &r#type[r#type.rfind(".").unwrap() + 1..r#type.len() - 1];
 
     let mut e_prefix = "";
 
@@ -885,26 +890,26 @@ fn gen_field_match_arm(attr: &OpenXmlSchemaTypeAttribute, gen_context: &GenConte
 
     quote! {
       #attr_name_literal => {
-        #attr_name_ident = Some(#e_type::from_bytes(&attr.value)?);
+        #attr_name_ident = Some(#e_type::from_bytes(&value)?);
       }
     }
   } else {
-    match attr.r#type.as_str() {
+    match r#type.as_str() {
       "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
       | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
         #attr_name_literal => {
-          #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+          #attr_name_ident = Some(decode_and_unescape_value(xml_reader.decoder())?.into_owned());
         }
       },
       "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
         #attr_name_literal => {
-          #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
+          #attr_name_ident = Some(crate::common::parse_bool_bytes(&value)?);
         }
       },
       "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
       | "UInt64Value" | "DoubleValue" | "SingleValue" => {
         let e_type: Type =
-          parse_str(&format!("crate::schemas::simple_type::{}", &attr.r#type)).unwrap();
+          parse_str(&format!("crate::schemas::simple_type::{}", &r#type)).unwrap();
 
         quote! {
           #attr_name_literal => {
@@ -916,7 +921,7 @@ fn gen_field_match_arm(attr: &OpenXmlSchemaTypeAttribute, gen_context: &GenConte
           }
         }
       }
-      _ => panic!("{}", attr.r#type),
+      _ => panic!("{}", r#type),
     }
   })
   .unwrap()

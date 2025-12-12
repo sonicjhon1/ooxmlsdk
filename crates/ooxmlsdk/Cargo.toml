@@ -36,3 +36,6 @@ zip = { workspace = true, optional = true }
 
 [build-dependencies]
 ooxmlsdk-build = { workspace = true }
+
+[lints]
+workspace = true

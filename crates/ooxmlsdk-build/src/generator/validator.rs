@@ -1,4 +1,4 @@
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
@@ -56,23 +56,16 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 }
 
                 for p in &t.particle.items {
-                    let child = child_map
-                        .get(p.name.as_str())
-                        .ok_or(format!("{:?}", p.name))
-                        .unwrap();
+                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
-                    let child_name_ident: Ident = if child.property_name.is_empty() {
-                        let child_name_list: Vec<&str> = child.name.split('/').collect();
-
-                        let child_rename_ser_str = child_name_list
-                            .last()
-                            .ok_or(format!("{:?}", child.name))
-                            .unwrap();
-
-                        parse_str(&child_rename_ser_str.to_snake_case()).unwrap()
+                    let child_name_ident_raw = if child.property_name.is_empty() {
+                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
                     } else {
-                        parse_str(&escape_snake_case(child.property_name.to_snake_case())).unwrap()
+                        &child.property_name
                     };
+
+                    let child_name_ident: Ident =
+                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
                     if p.occurs.is_empty() {
                         children_validator_stmt_list.push(
@@ -171,23 +164,16 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 }
 
                 for p in &t.particle.items {
-                    let child = child_map
-                        .get(p.name.as_str())
-                        .ok_or(format!("{:?}", p.name))
-                        .unwrap();
+                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
-                    let child_name_ident: Ident = if child.property_name.is_empty() {
-                        let child_name_list: Vec<&str> = child.name.split('/').collect();
-
-                        let child_rename_ser_str = child_name_list
-                            .last()
-                            .ok_or(format!("{:?}", child.name))
-                            .unwrap();
-
-                        parse_str(&child_rename_ser_str.to_snake_case()).unwrap()
+                    let child_name_ident_raw = if child.property_name.is_empty() {
+                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
                     } else {
-                        parse_str(&escape_snake_case(child.property_name.to_snake_case())).unwrap()
+                        &child.property_name
                     };
+
+                    let child_name_ident: Ident =
+                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
                     if p.occurs.is_empty() {
                         children_validator_stmt_list.push(
@@ -290,21 +276,29 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 }
 
 fn gen_attr_validator_stmt_list(
-    attr: &OpenXmlSchemaTypeAttribute,
+    OpenXmlSchemaTypeAttribute {
+        q_name,
+        property_name,
+        r#type,
+        validators,
+        ..
+    }: &OpenXmlSchemaTypeAttribute,
     _schema_namespace: &OpenXmlNamespace,
     _gen_context: &GenContext,
 ) -> Vec<Stmt> {
     let mut attr_validator_stmt_list: Vec<Stmt> = vec![];
 
-    let attr_name_ident: Ident = if attr.property_name.is_empty() {
-        parse_str(&escape_snake_case(attr.q_name.to_snake_case())).unwrap()
+    let attr_name_ident_raw = if property_name.is_empty() {
+        q_name
     } else {
-        parse_str(&escape_snake_case(attr.property_name.to_snake_case())).unwrap()
+        property_name
     };
+
+    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_ident_raw)).unwrap();
 
     let mut required = false;
 
-    for validator in &attr.validators {
+    for validator in validators {
         if validator.name == "RequiredValidator" {
             required = true;
         }
@@ -312,8 +306,8 @@ fn gen_attr_validator_stmt_list(
 
     let mut validator_count: usize = 0;
 
-    for validator in &attr.validators {
-        if attr.r#type.starts_with("ListValue<") || attr.r#type.starts_with("EnumValue<") {
+    for validator in validators {
+        if r#type.starts_with("ListValue<") || r#type.starts_with("EnumValue<") {
             continue;
         }
 
@@ -420,7 +414,7 @@ fn gen_attr_validator_stmt_list(
 
                             let value: i64 = argument.value.parse().unwrap();
 
-                            match attr.r#type.as_str() {
+                            match r#type.as_str() {
                                 "Int64Value" => {
                                     if required {
                                         attr_validator_stmt_list.push(
@@ -491,7 +485,7 @@ fn gen_attr_validator_stmt_list(
 
                             let value: i64 = argument.value.parse().unwrap();
 
-                            match attr.r#type.as_str() {
+                            match r#type.as_str() {
                                 "Int64Value" => {
                                     if required {
                                         attr_validator_stmt_list.push(

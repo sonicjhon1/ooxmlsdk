@@ -1,4 +1,8 @@
-pub fn escape_snake_case(name: String) -> String {
+use heck::{ToSnakeCase, ToUpperCamelCase};
+
+pub fn escape_snake_case(name: &str) -> String {
+    let name = name.to_snake_case();
+
     match name.as_str() {
         "if" | "else" | "ref" | "type" | "macro" | "loop" | "mod" | "override" | "for" | "in"
         | "box" | "final" | "break" => {
@@ -8,7 +12,9 @@ pub fn escape_snake_case(name: String) -> String {
     }
 }
 
-pub fn escape_upper_camel_case(name: String) -> String {
+pub fn escape_upper_camel_case(name: &str) -> String {
+    let name = name.to_upper_camel_case();
+
     match name.as_str() {
         "self" | "Self" => {
             format!("_{name}")
