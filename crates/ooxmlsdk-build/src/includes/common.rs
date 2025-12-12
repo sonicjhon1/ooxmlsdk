@@ -143,8 +143,9 @@ pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
 
 macro_rules! expect_event_start {
   ($xml_reader:expr_2021, $xml_event:expr_2021, $tag_prefix:expr_2021, $tag:expr_2021) => {{
+    tracing::debug!("xml_event: {:?}", $xml_event);
+
     if let Some((event, empty_tag)) = $xml_event {
-      tracing::debug!("Some(({event:?}, {empty_tag}))");
       (event, empty_tag)
     } else {
       let (event, empty_tag) = loop {
@@ -158,7 +159,7 @@ macro_rules! expect_event_start {
         }
       };
 
-      tracing::debug!("Some(({event:?}, {empty_tag}))");
+      tracing::debug!("({event:?}, {empty_tag})");
 
       match event.name().as_ref() {
         $tag_prefix | $tag => (),
