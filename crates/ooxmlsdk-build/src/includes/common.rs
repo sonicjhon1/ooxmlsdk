@@ -143,10 +143,11 @@ pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
 
 macro_rules! expect_event_start {
   ($xml_reader:expr_2021, $xml_event:expr_2021, $tag_prefix:expr_2021, $tag:expr_2021) => {{
-    if let Some((e, empty_tag)) = $xml_event {
-      (e, empty_tag)
+    if let Some((event, empty_tag)) = $xml_event {
+      tracing::debug!("Some(({event:?}, {empty_tag}))");
+      (event, empty_tag)
     } else {
-      let (e, empty_tag) = loop {
+      let (event, empty_tag) = loop {
         match $xml_reader.next()? {
           quick_xml::events::Event::Start(b) => break (b, false),
           quick_xml::events::Event::Empty(b) => break (b, true),
@@ -157,17 +158,19 @@ macro_rules! expect_event_start {
         }
       };
 
-      match e.name().as_ref() {
+      tracing::debug!("Some(({event:?}, {empty_tag}))");
+
+      match event.name().as_ref() {
         $tag_prefix | $tag => (),
         _ => {
           Err(super::super::common::SdkError::MismatchError {
             expected: String::from_utf8_lossy($tag).to_string(),
-            found: String::from_utf8_lossy(e.name().as_ref()).to_string(),
+            found: String::from_utf8_lossy(event.name().as_ref()).to_string(),
           })?;
         }
       }
 
-      (e, empty_tag)
+      (event, empty_tag)
     }
   }};
 }
