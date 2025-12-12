@@ -1,26 +1,26 @@
 pub fn escape_snake_case(name: String) -> String {
-  match name.as_str() {
-    "if" | "else" | "ref" | "type" | "macro" | "loop" | "mod" | "override" | "for" | "in"
-    | "box" | "final" | "break" => {
-      format!("r#{name}")
+    match name.as_str() {
+        "if" | "else" | "ref" | "type" | "macro" | "loop" | "mod" | "override" | "for" | "in"
+        | "box" | "final" | "break" => {
+            format!("r#{name}")
+        }
+        _ => name,
     }
-    _ => name,
-  }
 }
 
 pub fn escape_upper_camel_case(name: String) -> String {
-  match name.as_str() {
-    "self" | "Self" => {
-      format!("_{name}")
+    match name.as_str() {
+        "self" | "Self" => {
+            format!("_{name}")
+        }
+        _ => name,
     }
-    _ => name,
-  }
 }
 
 macro_rules! get_or_panic {
-  ($map:expr_2021, $key:expr_2021) => {
-    $map.get($key).ok_or_else(|| format!("{:?}", $key)).unwrap()
-  };
+    ($map:expr_2021, $key:expr_2021) => {
+        $map.get($key).ok_or_else(|| format!("{:?}", $key)).unwrap()
+    };
 }
 
 pub(crate) use get_or_panic;
