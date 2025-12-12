@@ -1,0 +1,39 @@
+name: Daily Sync OOXMLSDK Data
+
+on:
+    schedule:
+        - cron: "0 0 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    sync-data:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout main branch
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  ref: main
+
+            - name: Setup rust toolchain
+              uses: dtolnay/rust-toolchain@nightly
+
+            - name: Run sync script
+              run: |
+                  chmod +x ./scripts/sync_ooxmlsdk_data.rs && ./scripts/sync_ooxmlsdk_data.rs
+
+            - name: Create or update PR
+              uses: peter-evans/create-pull-request@v8
+              with:
+                  branch: ci/update-OOXMLSDK-data
+                  commit-message: "ci: update OOXMLSDK data"
+                  title: "ci: update OOXMLSDK data"
+                  body: "Automatic update of OOXMLSDK data."
+                  base: main
+                  delete-branch: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
