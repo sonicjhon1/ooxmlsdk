@@ -149,7 +149,10 @@ macro_rules! expect_event_start {
       (event, empty_tag)
     } else {
       let (event, empty_tag) = loop {
-        match $xml_reader.next()? {
+        let event = $xml_reader.next()?;
+        tracing::debug!("event: {event:?}");
+
+        match event {
           quick_xml::events::Event::Start(b) => break (b, false),
           quick_xml::events::Event::Empty(b) => break (b, true),
           quick_xml::events::Event::Eof => {
