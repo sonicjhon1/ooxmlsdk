@@ -30,10 +30,10 @@ pub struct GenContext<'a> {
 
 impl<'a> GenContext<'a> {
   pub(crate) fn new(data_dir: impl AsRef<Path>) -> Self {
-    let data_dir_path = data_dir.as_ref();
-    let data_parts_dir_path = &data_dir_path.join("parts");
-    let data_schemas_dir_path = &data_dir_path.join("schemas");
-    let data_typed_dir_path = &data_dir_path.join("typed");
+    let data_dir = data_dir.as_ref();
+    let data_parts_dir_path = &data_dir.join("parts");
+    let data_schemas_dir_path = &data_dir.join("schemas");
+    let data_typed_dir_path = &data_dir.join("typed");
 
     let mut parts: Vec<OpenXmlPart> = vec![];
     let mut schemas: Vec<OpenXmlSchema> = vec![];
@@ -89,11 +89,11 @@ impl<'a> GenContext<'a> {
       }
     }
 
-    let file = File::open(data_dir_path.join("namespaces.json")).unwrap();
+    let file = File::open(data_dir.join("namespaces.json")).unwrap();
 
     let namespaces: Vec<OpenXmlNamespace> = serde_json::from_reader(file).unwrap();
 
-    let file = File::open(data_dir_path.join("typed").join("namespaces.json")).unwrap();
+    let file = File::open(data_dir.join("typed").join("namespaces.json")).unwrap();
 
     let typed_namespaces: Vec<TypedNamespace> = serde_json::from_reader(file).unwrap();
 

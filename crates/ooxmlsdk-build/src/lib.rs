@@ -22,9 +22,10 @@ pub fn generate(out_dir: impl AsRef<Path>) {
 }
 
 pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
-  let out_dir_path = out_dir.as_ref();
+  let data_dir = data_dir.as_ref();
+  let out_dir = out_dir.as_ref();
 
-  let mut gen_context = GenContext::new(data_dir.as_ref());
+  let mut gen_context = GenContext::new(data_dir);
 
   for namespace in gen_context.namespaces.iter() {
     gen_context
@@ -93,11 +94,11 @@ pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
     .part_name_type_name_map
     .insert("StylesWithEffectsPart", "w:CT_Styles/w:styles");
 
-  write_schemas(&gen_context, out_dir_path);
+  write_schemas(&gen_context, out_dir);
 
-  write_deserializers(&gen_context, out_dir_path);
+  write_deserializers(&gen_context, out_dir);
 
-  write_serializers(&gen_context, out_dir_path);
+  write_serializers(&gen_context, out_dir);
 
   #[cfg(feature = "parts")]
   let with_parts = true;
@@ -105,7 +106,7 @@ pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
   let with_parts = false;
 
   if with_parts {
-    write_parts(&gen_context, out_dir_path);
+    write_parts(&gen_context, out_dir);
   }
 
   #[cfg(feature = "validators")]
@@ -114,7 +115,7 @@ pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
   let with_validators = false;
 
   if with_validators {
-    write_validators(&gen_context, out_dir_path);
+    write_validators(&gen_context, out_dir);
   }
 }
 
