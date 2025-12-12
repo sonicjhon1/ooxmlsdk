@@ -15,10 +15,16 @@ pub mod includes;
 pub mod models;
 pub mod utils;
 
-pub fn generate(data_dir: &str, out_dir: &str) {
-  let out_dir_path = Path::new(out_dir);
+pub fn generate(out_dir: impl AsRef<Path>) {
+  let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-  let mut gen_context = GenContext::new(data_dir);
+  generate_with(crate_root.join("./data/"), out_dir);
+}
+
+pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
+  let out_dir_path = out_dir.as_ref();
+
+  let mut gen_context = GenContext::new(data_dir.as_ref());
 
   for namespace in gen_context.namespaces.iter() {
     gen_context
@@ -330,6 +336,6 @@ mod tests {
 
   #[test]
   fn test_gen() {
-    generate("../ooxmlsdk/data", "src");
+    generate("src");
   }
 }

@@ -29,8 +29,8 @@ pub struct GenContext<'a> {
 }
 
 impl<'a> GenContext<'a> {
-  pub(crate) fn new(data_dir: &'a str) -> Self {
-    let data_dir_path = Path::new(data_dir);
+  pub(crate) fn new(data_dir: impl AsRef<Path>) -> Self {
+    let data_dir_path = data_dir.as_ref();
     let data_parts_dir_path = &data_dir_path.join("parts");
     let data_schemas_dir_path = &data_dir_path.join("schemas");
     let data_typed_dir_path = &data_dir_path.join("typed");
