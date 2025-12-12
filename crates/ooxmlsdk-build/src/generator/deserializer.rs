@@ -457,7 +457,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
 
     let mut expect_event_start_stmt: Stmt = parse2(quote! {
       let (e, empty_tag) =
-        crate::common::expect_event_start!(xml_reader, xml_event, #prefix_type_name_literal, #type_name_literal);
+        crate::common::expect_event_start(xml_reader, xml_event, #prefix_type_name_literal, #type_name_literal);
     }).unwrap();
 
     let attr_match_stmt_opt: Option<Stmt> = if (t.base_class == "OpenXmlCompositeElement"
@@ -513,7 +513,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
     } else {
       expect_event_start_stmt = parse2(quote! {
         let (_, empty_tag) =
-          crate::common::expect_event_start!(xml_reader, xml_event, #prefix_type_name_literal, #type_name_literal);
+          crate::common::expect_event_start(xml_reader, xml_event, #prefix_type_name_literal, #type_name_literal);
       }).unwrap();
 
       None

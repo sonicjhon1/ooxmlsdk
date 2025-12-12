@@ -1,182 +1,176 @@
 use quick_xml::{
-  Decoder, Reader,
-  encoding::EncodingError,
-  events::{Event, attributes::AttrError},
+    Decoder, Reader,
+    encoding::EncodingError,
+    events::{BytesStart, Event, attributes::AttrError},
 };
 use std::{
-  io::BufRead,
-  num::{ParseFloatError, ParseIntError},
+    io::BufRead,
+    num::{ParseFloatError, ParseIntError},
 };
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SdkError {
-  #[error("quick_xml error")]
-  QuickXmlError(#[from] quick_xml::Error),
-  #[error("quick_xml encoding error")]
-  QuickEncodingError(#[from] EncodingError),
-  #[error("quick_xml attr error")]
-  AttrError(#[from] AttrError),
-  #[error("ParseIntError")]
-  ParseIntError(#[from] ParseIntError),
-  #[error("ParseFloatError")]
-  ParseFloatError(#[from] ParseFloatError),
-  #[error("StdFmtError")]
-  StdFmtError(#[from] std::fmt::Error),
-  #[error("StdIoError")]
-  StdIoError(#[from] std::io::Error),
-  #[cfg(feature = "parts")]
-  #[error("ZipError")]
-  ZipError(#[from] zip::result::ZipError),
-  #[error("mismatch error (expected {expected:?}, found {found:?})")]
-  MismatchError { expected: String, found: String },
-  #[error("`{0}` common error")]
-  CommonError(String),
-  #[error("unknown error")]
-  UnknownError,
+    #[error("quick_xml error")]
+    QuickXmlError(#[from] quick_xml::Error),
+    #[error("quick_xml encoding error")]
+    QuickEncodingError(#[from] EncodingError),
+    #[error("quick_xml attr error")]
+    AttrError(#[from] AttrError),
+    #[error("ParseIntError")]
+    ParseIntError(#[from] ParseIntError),
+    #[error("ParseFloatError")]
+    ParseFloatError(#[from] ParseFloatError),
+    #[error("StdFmtError")]
+    StdFmtError(#[from] std::fmt::Error),
+    #[error("StdIoError")]
+    StdIoError(#[from] std::io::Error),
+    #[cfg(feature = "parts")]
+    #[error("ZipError")]
+    ZipError(#[from] zip::result::ZipError),
+    #[error("mismatch error (expected {expected:?}, found {found:?})")]
+    MismatchError { expected: String, found: String },
+    #[error("`{0}` common error")]
+    CommonError(String),
+    #[error("unknown error")]
+    UnknownError,
 }
 
 pub trait XmlReader<'de> {
-  fn next(&mut self) -> Result<Event<'de>, SdkError>;
+    fn next(&mut self) -> Result<Event<'de>, SdkError>;
 
-  fn decoder(&self) -> Decoder;
+    fn decoder(&self) -> Decoder;
 }
 
 pub struct IoReader<R: BufRead> {
-  reader: Reader<R>,
-  buf: Vec<u8>,
+    reader: Reader<R>,
+    buf: Vec<u8>,
 }
 
 impl<R: BufRead> IoReader<R> {
-  pub fn new(reader: Reader<R>) -> Self {
-    Self {
-      reader,
-      buf: Vec::new(),
+    pub fn new(reader: Reader<R>) -> Self {
+        Self {
+            reader,
+            buf: Vec::new(),
+        }
     }
-  }
 }
 
 impl<'de, R: BufRead> XmlReader<'de> for IoReader<R> {
-  #[inline]
-  fn next(&mut self) -> Result<Event<'de>, SdkError> {
-    self.buf.clear();
+    #[inline]
+    fn next(&mut self) -> Result<Event<'de>, SdkError> {
+        self.buf.clear();
 
-    Ok(self.reader.read_event_into(&mut self.buf)?.into_owned())
-  }
+        Ok(self.reader.read_event_into(&mut self.buf)?.into_owned())
+    }
 
-  #[inline]
-  fn decoder(&self) -> Decoder {
-    self.reader.decoder()
-  }
+    #[inline]
+    fn decoder(&self) -> Decoder { self.reader.decoder() }
 }
 
 pub struct SliceReader<'de> {
-  reader: Reader<&'de [u8]>,
+    reader: Reader<&'de [u8]>,
 }
 
 impl<'de> SliceReader<'de> {
-  pub fn new(reader: Reader<&'de [u8]>) -> Self {
-    Self { reader }
-  }
+    pub fn new(reader: Reader<&'de [u8]>) -> Self { Self { reader } }
 }
 
 impl<'de> XmlReader<'de> for SliceReader<'de> {
-  #[inline]
-  fn next(&mut self) -> Result<Event<'de>, SdkError> {
-    Ok(self.reader.read_event()?)
-  }
+    #[inline]
+    fn next(&mut self) -> Result<Event<'de>, SdkError> { Ok(self.reader.read_event()?) }
 
-  #[inline]
-  fn decoder(&self) -> Decoder {
-    self.reader.decoder()
-  }
+    #[inline]
+    fn decoder(&self) -> Decoder { self.reader.decoder() }
 }
 
 pub fn resolve_zip_file_path(path: &str) -> String {
-  let mut stack = Vec::new();
+    let mut stack = Vec::new();
 
-  for component in path.split('/') {
-    match component {
-      "" | "." => {
-        // Ignore empty components and current directory symbol
-      }
-      ".." => {
-        // Go up one directory if possible
-        stack.pop();
-      }
-      _ => {
-        // Add the component to the path
-        stack.push(component);
-      }
+    for component in path.split('/') {
+        match component {
+            "" | "." => {
+                // Ignore empty components and current directory symbol
+            }
+            ".." => {
+                // Go up one directory if possible
+                stack.pop();
+            }
+            _ => {
+                // Add the component to the path
+                stack.push(component);
+            }
+        }
     }
-  }
-  // Join the components back into a path
-  stack.join("/")
+    // Join the components back into a path
+    stack.join("/")
 }
 
 #[inline]
 pub(crate) fn from_reader_inner<R: BufRead>(reader: R) -> Result<IoReader<R>, SdkError> {
-  let mut xml_reader = quick_xml::Reader::from_reader(reader);
-  xml_reader.config_mut().check_end_names = false;
+    let mut xml_reader = quick_xml::Reader::from_reader(reader);
+    xml_reader.config_mut().check_end_names = false;
 
-  Ok(IoReader::new(xml_reader))
+    Ok(IoReader::new(xml_reader))
 }
 
 #[inline]
 pub(crate) fn from_str_inner(s: &str) -> Result<SliceReader<'_>, SdkError> {
-  let mut xml_reader = quick_xml::Reader::from_str(s);
-  xml_reader.config_mut().check_end_names = false;
+    let mut xml_reader = quick_xml::Reader::from_str(s);
+    xml_reader.config_mut().check_end_names = false;
 
-  Ok(SliceReader::new(xml_reader))
+    Ok(SliceReader::new(xml_reader))
 }
 
 #[inline]
 pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
-  match b {
-    b"true" | b"1" | b"True" | b"TRUE" | b"t" | b"Yes" | b"YES" | b"yes" | b"y" => Ok(true),
-    b"false" | b"0" | b"False" | b"FALSE" | b"f" | b"No" | b"NO" | b"no" | b"n" | b"" => Ok(false),
-    other => Err(SdkError::CommonError(
-      String::from_utf8_lossy(other).into_owned(),
-    )),
-  }
+    match b {
+        b"true" | b"1" | b"True" | b"TRUE" | b"t" | b"Yes" | b"YES" | b"yes" | b"y" => Ok(true),
+        b"false" | b"0" | b"False" | b"FALSE" | b"f" | b"No" | b"NO" | b"no" | b"n" | b"" => {
+            Ok(false)
+        }
+        other => Err(SdkError::CommonError(
+            String::from_utf8_lossy(other).into_owned(),
+        )),
+    }
 }
 
-macro_rules! expect_event_start {
-  ($xml_reader:expr_2021, $xml_event:expr_2021, $tag_prefix:expr_2021, $tag:expr_2021) => {{
-    tracing::debug!("xml_event: {:?}", $xml_event);
+#[inline(always)]
+pub(crate) fn expect_event_start<'de>(
+    xml_reader: &mut impl XmlReader<'de>,
+    xml_event: Option<(BytesStart<'de>, bool)>,
+    tag_prefix: &[u8],
+    tag: &[u8],
+) -> Result<(BytesStart<'de>, bool), SdkError> {
+    tracing::debug!("xml_event: {:?}", xml_event);
 
-    if let Some((event, empty_tag)) = $xml_event {
-      (event, empty_tag)
-    } else {
-      let (event, empty_tag) = loop {
-        let event = $xml_reader.next()?;
+    if let Some((event, empty_tag)) = xml_event {
+        return Ok((event, empty_tag));
+    }
+
+    let (event, empty_tag) = loop {
+        let event = xml_reader.next()?;
         tracing::debug!("event: {event:?}");
 
         match event {
-          quick_xml::events::Event::Start(b) => break (b, false),
-          quick_xml::events::Event::Empty(b) => break (b, true),
-          quick_xml::events::Event::Eof => {
-            return Err(super::super::common::SdkError::UnknownError);
-          }
-          _ => continue,
+            Event::Start(b) => break (b, false),
+            Event::Empty(b) => break (b, true),
+            Event::Eof => {
+                return Err(SdkError::UnknownError);
+            }
+            _ => continue,
         }
-      };
+    };
 
-      tracing::debug!("({event:?}, {empty_tag})");
+    tracing::debug!("({event:?}, {empty_tag})");
 
-      match event.name().as_ref() {
-        $tag_prefix | $tag => (),
-        _ => {
-          Err(super::super::common::SdkError::MismatchError {
-            expected: String::from_utf8_lossy($tag).to_string(),
+    let event_name = event.name().0;
+    if event_name != tag_prefix || event_name != tag {
+        return Err(SdkError::MismatchError {
+            expected: String::from_utf8_lossy(tag).to_string(),
             found: String::from_utf8_lossy(event.name().as_ref()).to_string(),
-          })?;
-        }
-      }
-
-      (event, empty_tag)
+        });
     }
-  }};
-}
 
-pub(crate) use expect_event_start;
+    Ok((event, empty_tag))
+}
