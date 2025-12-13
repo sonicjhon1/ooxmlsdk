@@ -69,28 +69,27 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
         );
     }
 
-    for t in &schema.types {
-        if t.is_abstract {
+    for schema_type in &schema.types {
+        if schema_type.is_abstract {
             continue;
         }
 
         let struct_type: Type = parse_str(&format!(
             "crate::schemas::{}::{}",
             &schema.module_name,
-            t.class_name.to_upper_camel_case()
+            schema_type.class_name.to_upper_camel_case()
         ))
         .unwrap();
 
         let child_choice_enum_type: Type = parse_str(&format!(
             "crate::schemas::{}::{}ChildChoice",
             &schema.module_name,
-            t.class_name.to_upper_camel_case()
+            schema_type.class_name.to_upper_camel_case()
         ))
         .unwrap();
 
-        let last_name = &t.name[t.name.find('/').unwrap() + 1..t.name.len()];
-        let last_name_prefix = &last_name[0..last_name.find(':').unwrap()];
-        let last_name_suffix = &last_name[last_name.find(':').unwrap() + 1..last_name.len()];
+        let (_, last_name) = schema_type.split_name();
+        let (last_name_prefix, last_name_suffix) = last_name.split_once(':').unwrap();
 
         let last_name_start_tag = format!("<{last_name}");
         let last_name_suffix_start_tag = format!("<{last_name_suffix}");
@@ -108,11 +107,11 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
         let mut child_arms: Vec<Arm> = vec![];
 
-        for attr in &t.attributes {
+        for attr in &schema_type.attributes {
             variants.push(gen_attr(attr));
         }
 
-        if t.base_class == "OpenXmlLeafTextElement" {
+        if schema_type.base_class == "OpenXmlLeafTextElement" {
             children_writer = quote! {
               if let Some(xml_content) = &self.xml_content {
                 writer.write_str(&quick_xml::escape::escape(xml_content.to_string()))?;
@@ -130,7 +129,7 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 writer.write_str(#last_name_end_tag)?;
               }
             };
-        } else if t.base_class == "OpenXmlLeafElement" {
+        } else if schema_type.base_class == "OpenXmlLeafElement" {
             children_writer = quote! {};
 
             end_tag_writer = quote! {};
@@ -138,27 +137,27 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
             end_writer = quote! {
               writer.write_str("/>")?;
             };
-        } else if t.base_class == "OpenXmlCompositeElement"
-            || t.base_class == "CustomXmlElement"
-            || t.base_class == "OpenXmlPartRootElement"
-            || t.base_class == "SdtElement"
+        } else if schema_type.base_class == "OpenXmlCompositeElement"
+            || schema_type.base_class == "CustomXmlElement"
+            || schema_type.base_class == "OpenXmlPartRootElement"
+            || schema_type.base_class == "SdtElement"
         {
-            if t.children.is_empty() {
+            if schema_type.children.is_empty() {
                 end_tag_writer = quote! {};
 
                 end_writer = quote! {
                   writer.write_str("/>")?;
                 };
-            } else if t.is_one_sequence_flatten() {
-                let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
-
-                for child in &t.children {
+            } else if schema_type.is_one_sequence_flatten() {
+                let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> =
+                    HashMap::with_capacity(schema_type.children.len());
+                for child in &schema_type.children {
                     child_map.insert(&child.name, child);
                 }
 
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
-                for p in &t.particle.items {
+                for p in &schema_type.particle.items {
                     let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
                     let child_name_ident_raw = if child.property_name.is_empty() {
@@ -214,7 +213,7 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                   }
                 };
             } else {
-                for child in &t.children {
+                for child in &schema_type.children {
                     child_arms.push(gen_child_arm(child, &child_choice_enum_type));
                 }
 
@@ -238,10 +237,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                   }
                 };
             }
-        } else if t.is_derived {
+        } else if schema_type.is_derived {
             let base_class_type = get_or_panic!(
                 gen_context.type_name_type_map,
-                &t.name[0..t.name.find('/').unwrap() + 1]
+                &schema_type.name[0..schema_type.name.find('/').unwrap() + 1]
             );
 
             for attr in &base_class_type.attributes {
@@ -250,7 +249,7 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
             let mut children_map: HashMap<&str, OpenXmlSchemaTypeChild> = HashMap::new();
 
-            for c in &t.children {
+            for c in &schema_type.children {
                 children_map.insert(&c.name, c.clone());
             }
 
@@ -290,17 +289,18 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                       writer.write_str("/>")?;
                     };
                 }
-            } else if t.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+            } else if schema_type.is_one_sequence_flatten()
+                && base_class_type.composite_type == "OneSequence"
             {
                 let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
 
-                for child in &t.children {
+                for child in &schema_type.children {
                     child_map.insert(&child.name, child);
                 }
 
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
-                for p in &t.particle.items {
+                for p in &schema_type.particle.items {
                     let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
                     let child_name_ident_raw = if child.property_name.is_empty() {
@@ -377,7 +377,7 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 };
             }
         } else {
-            panic!("{t:?}");
+            panic!("{schema_type:?}");
         };
 
         let attr_writer = quote! {
@@ -388,21 +388,21 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
         let mut xml_header_writer: Option<Stmt> = None;
 
-        if !t.part.is_empty() || t.base_class == "OpenXmlPartRootElement" {
+        if !schema_type.part.is_empty() || schema_type.base_class == "OpenXmlPartRootElement" {
             xml_header_writer = Some(
-        parse2(quote! {
-          writer.write_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n")?;
-        })
-        .unwrap(),
-      );
+                parse2(quote! {
+                    writer.write_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n")?;
+                })
+                .unwrap(),
+            );
         }
 
-        if !t.part.is_empty()
-            || t.base_class == "OpenXmlPartRootElement"
-            || ((t.base_class == "OpenXmlCompositeElement"
-                || t.base_class == "CustomXmlElement"
-                || t.base_class == "OpenXmlPartRootElement"
-                || t.base_class == "SdtElement")
+        if !schema_type.part.is_empty()
+            || schema_type.base_class == "OpenXmlPartRootElement"
+            || ((schema_type.base_class == "OpenXmlCompositeElement"
+                || schema_type.base_class == "CustomXmlElement"
+                || schema_type.base_class == "OpenXmlPartRootElement"
+                || schema_type.base_class == "SdtElement")
                 && (schema.target_namespace
                     == "http://schemas.openxmlformats.org/drawingml/2006/main"
                     || schema.target_namespace
@@ -448,12 +448,12 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
         let xmlns_prefix_str = &schema_namespace.prefix;
 
-        let to_xml_fn: ItemFn = if !t.part.is_empty()
-            || t.base_class == "OpenXmlPartRootElement"
-            || ((t.base_class == "OpenXmlCompositeElement"
-                || t.base_class == "CustomXmlElement"
-                || t.base_class == "OpenXmlPartRootElement"
-                || t.base_class == "SdtElement")
+        let to_xml_fn: ItemFn = if !schema_type.part.is_empty()
+            || schema_type.base_class == "OpenXmlPartRootElement"
+            || ((schema_type.base_class == "OpenXmlCompositeElement"
+                || schema_type.base_class == "CustomXmlElement"
+                || schema_type.base_class == "OpenXmlPartRootElement"
+                || schema_type.base_class == "SdtElement")
                 && (schema.target_namespace
                     == "http://schemas.openxmlformats.org/drawingml/2006/main"
                     || schema.target_namespace
@@ -569,9 +569,7 @@ fn gen_attr(schema: &OpenXmlSchemaTypeAttribute) -> TokenStream {
 }
 
 fn gen_child_arm(child: &OpenXmlSchemaTypeChild, child_choice_enum_type: &Type) -> Arm {
-    let child_name_ident_raw = child.name.rsplit('/').next().ok_or(&child.name).unwrap();
-
-    let child_name_ident: Ident = parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
+    let child_name_ident = child.as_last_name_ident();
 
     parse2(quote! {
       #child_choice_enum_type::#child_name_ident(child) => child.write_xml(writer, xmlns_prefix)?,
