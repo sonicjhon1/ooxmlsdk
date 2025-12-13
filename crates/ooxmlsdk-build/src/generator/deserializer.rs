@@ -223,7 +223,9 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                             })
                             .unwrap(),
                         );
-                    } else if schema_type_particle.occurs[0].min == 0 && schema_type_particle.occurs[0].max == 1 {
+                    } else if schema_type_particle.occurs[0].min == 0
+                        && schema_type_particle.occurs[0].max == 1
+                    {
                         field_declaration_list.push(
                             parse2(quote! {
                               let mut #child_property_name_ident = None;
@@ -288,7 +290,9 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 attributes.push(attr);
             }
 
-            if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence" {
+            if schema_type.is_one_sequence_flatten()
+                && base_class_type.composite_type == "OneSequence"
+            {
                 for p in &schema_type.particle.items {
                     let child = get_or_panic!(child_map, p.name.as_str());
 
@@ -365,7 +369,9 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             ))
             .unwrap();
 
-            if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence" {
+            if schema_type.is_one_sequence_flatten()
+                && base_class_type.composite_type == "OneSequence"
+            {
                 for p in &schema_type.particle.items {
                     let child = get_or_panic!(child_map, p.name.as_str());
 
@@ -387,7 +393,9 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 }
             }
 
-            if schema_type.children.is_empty() && base_class_type.base_class == "OpenXmlLeafTextElement" {
+            if schema_type.children.is_empty()
+                && base_class_type.base_class == "OpenXmlLeafTextElement"
+            {
                 let base_first_name =
                     &base_class_type.name[0..base_class_type.name.find('/').unwrap()];
 
@@ -428,7 +436,8 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 crate::common::expect_event_start(xml_reader, xml_event, #prefixed_type_name_literal, #type_name_literal)?;
         }).unwrap();
 
-        let attr_match_stmt_opt: Option<Stmt> = if (schema_type.base_class == "OpenXmlCompositeElement"
+        let attr_match_stmt_opt: Option<Stmt> = if (schema_type.base_class
+            == "OpenXmlCompositeElement"
             || schema_type.base_class == "CustomXmlElement"
             || schema_type.base_class == "OpenXmlPartRootElement"
             || schema_type.base_class == "SdtElement")
