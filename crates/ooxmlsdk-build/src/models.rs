@@ -72,17 +72,12 @@ pub struct OpenXmlSchemaType {
 
 impl OpenXmlSchemaType {
     pub fn is_one_sequence_flatten(&self) -> bool {
-        if self.composite_type == "OneSequence" || self.particle.kind == "Sequence" {
-            for p in &self.particle.items {
-                if !p.kind.is_empty() || !p.items.is_empty() {
-                    return false;
-                }
-            }
-
-            true
-        } else {
-            false
-        }
+        (self.composite_type == "OneSequence" || self.particle.kind == "Sequence")
+            && self
+                .particle
+                .items
+                .iter()
+                .all(|p| p.kind.is_empty() && p.items.is_empty())
     }
 }
 
