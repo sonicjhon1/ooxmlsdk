@@ -595,18 +595,12 @@ fn gen_attr(
 }
 
 fn gen_child_arm(child: &OpenXmlSchemaTypeChild, child_choice_enum_type: &Type) -> Arm {
-    let child_name_list: Vec<&str> = child.name.split('/').collect();
+    let child_name_ident_raw = child.name.rsplit('/').next().ok_or(&child.name).unwrap();
 
-    let child_rename_ser_str = child_name_list
-        .last()
-        .ok_or(format!("{:?}", child.name))
-        .unwrap();
-
-    let child_variant_name_ident: Ident =
-        parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
+    let child_name_ident: Ident = parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
     parse2(quote! {
-    #child_choice_enum_type::#child_variant_name_ident(child) => child.write_xml(writer, xmlns_prefix)?,
-  })
-  .unwrap()
+      #child_choice_enum_type::#child_name_ident(child) => child.write_xml(writer, xmlns_prefix)?,
+    })
+    .unwrap()
 }
