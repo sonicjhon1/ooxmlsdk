@@ -1,9 +1,8 @@
+use crate::utils::escape_snake_case;
 use heck::ToUpperCamelCase;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use syn::{Ident, parse_str};
-
-use crate::utils::escape_snake_case;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
@@ -85,12 +84,15 @@ impl OpenXmlSchemaType {
                 .all(|p| p.kind.is_empty() && p.items.is_empty())
     }
 
+    #[inline(always)]
     pub fn split_name(&self) -> (&str, &str) { return self.name.split_once('/').unwrap() }
 
+    #[inline(always)]
     pub fn split_last_name(&self) -> (&str, &str) {
         return self.split_name().1.split_once(':').unwrap();
     }
 
+    #[inline(always)]
     pub fn child_map(&self) -> HashMap<&str, &OpenXmlSchemaTypeChild> {
         let mut child_map = HashMap::with_capacity(self.children.len());
         for child in &self.children {
@@ -161,16 +163,20 @@ pub struct OpenXmlSchemaTypeChild {
 }
 
 impl OpenXmlSchemaTypeChild {
+    #[inline(always)]
     pub fn split_name(&self) -> (&str, &str) { return self.name.split_once('/').unwrap() }
 
+    #[inline(always)]
     pub fn split_last_name(&self) -> (&str, &str) {
         return self.split_name().1.split_once(':').unwrap();
     }
 
+    #[inline(always)]
     pub fn as_last_name_ident(&self) -> Ident {
         return parse_str(&self.split_name().1.to_upper_camel_case()).unwrap();
     }
 
+    #[inline(always)]
     pub fn as_property_name_str(&self) -> &str {
         return if self.property_name.is_empty() {
             self.split_name().1
@@ -179,6 +185,7 @@ impl OpenXmlSchemaTypeChild {
         };
     }
 
+    #[inline(always)]
     pub fn as_property_name_ident(&self) -> Ident {
         return parse_str(&escape_snake_case(self.as_property_name_str())).unwrap();
     }
