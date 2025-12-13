@@ -1,3 +1,5 @@
+#![feature(trim_prefix_suffix)]
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::{fs, path::Path};

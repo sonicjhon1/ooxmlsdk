@@ -824,41 +824,23 @@ fn gen_simple_child_match_arm(first_name: &str, gen_context: &GenContext) -> Arm
     .unwrap();
 }
 
-fn gen_field_match_arm(
-    OpenXmlSchemaTypeAttribute {
-        q_name,
-        property_name,
-        r#type,
-        ..
-    }: &OpenXmlSchemaTypeAttribute,
-    gen_context: &GenContext,
-) -> Arm {
-    let attr_name_str = if q_name.starts_with(':') {
-        &q_name[1..q_name.len()]
-    } else {
-        q_name
-    };
-
-    let attr_name_ident_raw = if property_name.is_empty() {
-        q_name
-    } else {
-        property_name
-    };
-    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_ident_raw)).unwrap();
+fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenContext) -> Arm {
+    let attr_name_ident = schema.as_name_ident();
+    let attr_name_str = schema.as_name_str();
 
     let attr_name_literal: LitByteStr = parse_str(&format!("b\"{attr_name_str}\"")).unwrap();
 
-    parse2(if r#type.starts_with("ListValue<") {
+    parse2(if schema.r#type.starts_with("ListValue<") {
     quote! {
       #attr_name_literal => {
         #attr_name_ident = Some(decode_and_unescape_value(xml_reader.decoder())?.into_owned());
       }
     }
-  } else if r#type.starts_with("EnumValue<") {
+  } else if schema.r#type.starts_with("EnumValue<") {
     let e_typed_namespace_str =
-      &r#type[r#type.find("<").unwrap() + 1..r#type.rfind(".").unwrap()];
+      &schema.r#type[schema.r#type.find("<").unwrap() + 1..schema.r#type.rfind(".").unwrap()];
 
-    let enum_name = &r#type[r#type.rfind(".").unwrap() + 1..r#type.len() - 1];
+    let enum_name = &schema.r#type[schema.r#type.rfind(".").unwrap() + 1..schema.r#type.len() - 1];
 
     let mut e_prefix = "";
 
@@ -894,7 +876,7 @@ fn gen_field_match_arm(
       }
     }
   } else {
-    match r#type.as_str() {
+    match schema.r#type.as_str() {
       "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
       | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
         #attr_name_literal => {
@@ -909,7 +891,7 @@ fn gen_field_match_arm(
       "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
       | "UInt64Value" | "DoubleValue" | "SingleValue" => {
         let e_type: Type =
-          parse_str(&format!("crate::schemas::simple_type::{}", &r#type)).unwrap();
+          parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).unwrap();
 
         quote! {
           #attr_name_literal => {
@@ -921,7 +903,7 @@ fn gen_field_match_arm(
           }
         }
       }
-      _ => panic!("{}", r#type),
+      _ => panic!("{}", schema.r#type),
     }
   })
   .unwrap()

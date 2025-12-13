@@ -201,31 +201,20 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
 }
 
 fn gen_attr(
-    OpenXmlSchemaTypeAttribute {
-        q_name,
-        property_name,
-        r#type,
-        property_comments,
-        version,
-        validators,
-    }: &OpenXmlSchemaTypeAttribute,
+    schema: &OpenXmlSchemaTypeAttribute,
     schema_namespace: &OpenXmlNamespace,
     gen_context: &GenContext,
 ) -> TokenStream {
-    let attr_name_raw = if property_name.is_empty() {
-        q_name
-    } else {
-        property_name
-    };
-    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_raw)).unwrap();
+    let attr_name_ident = schema.as_name_ident();
 
-    let type_ident: Type = if r#type.starts_with("ListValue<") {
+    let type_ident: Type = if schema.r#type.starts_with("ListValue<") {
         parse_str("String").unwrap()
-    } else if r#type.starts_with("EnumValue<") {
+    } else if schema.r#type.starts_with("EnumValue<") {
         let e_typed_namespace_str =
-            &r#type[r#type.find("<").unwrap() + 1..r#type.rfind(".").unwrap()];
+            &schema.r#type[schema.r#type.find("<").unwrap() + 1..schema.r#type.rfind(".").unwrap()];
 
-        let enum_name = &r#type[r#type.rfind(".").unwrap() + 1..r#type.len() - 1];
+        let enum_name =
+            &schema.r#type[schema.r#type.rfind(".").unwrap() + 1..schema.r#type.len() - 1];
 
         let mut e_prefix = "";
 
@@ -260,31 +249,23 @@ fn gen_attr(
             parse_str(&enum_name.to_upper_camel_case()).unwrap()
         }
     } else {
-        parse_str(&format!("crate::schemas::simple_type::{}", &r#type)).unwrap()
+        parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).unwrap()
     };
 
-    let mut required = false;
+    let property_comments_doc = &schema.property_comments;
 
-    for validator in validators {
-        if validator.name == "RequiredValidator" {
-            required = true;
-        }
-    }
-
-    let property_comments_doc = format!(" {}", property_comments);
-
-    let version_doc = if version.is_empty() {
+    let version_doc = if schema.version.is_empty() {
         " Available in Office2007 and above.".to_string()
     } else {
-        format!(" Available in {} and above.", version)
+        format!(" Available in {} and above.", schema.version)
     };
 
     let qualified_doc = format!(
         " Represents the following attribute in the schema: {}",
-        q_name
+        schema.as_name_str()
     );
 
-    if required {
+    if schema.is_validator_required() {
         quote! {
           #[doc = #property_comments_doc]
           #[doc = ""]
@@ -365,71 +346,71 @@ fn gen_children(
 }
 
 fn gen_xml_content_type(
-    t: &OpenXmlSchemaType,
+    schema_type: &OpenXmlSchemaType,
     schema_namespace: &OpenXmlNamespace,
     gen_context: &GenContext,
 ) -> Type {
-    let first_name = &t.name[0..t.name.find('/').unwrap()];
+    let (first_name, _) = schema_type.name.split_once('/').unwrap();
 
-    if let Some(e) = gen_context.enum_type_enum_map.get(first_name) {
-        let enum_namespace = get_or_panic!(gen_context.enum_type_namespace_map, e.r#type.as_str());
-
-        if enum_namespace.prefix != schema_namespace.prefix {
-            parse_str(&format!(
-                "crate::schemas::{}::{}",
-                &e.module_name,
-                e.name.to_upper_camel_case()
-            ))
-            .unwrap()
-        } else {
-            parse_str(&e.name.to_upper_camel_case()).unwrap()
-        }
-    } else {
-        parse_str(&format!(
+    let Some(schema_enum) = gen_context.enum_type_enum_map.get(first_name) else {
+        return parse_str(&format!(
             "crate::schemas::simple_type::{}",
             simple_type_mapping(first_name)
         ))
-        .unwrap()
+        .unwrap();
+    };
+
+    let enum_namespace = get_or_panic!(
+        gen_context.enum_type_namespace_map,
+        schema_enum.r#type.as_str()
+    );
+    if enum_namespace.prefix == schema_namespace.prefix {
+        return parse_str(&schema_enum.name.to_upper_camel_case()).unwrap();
     }
+
+    return parse_str(&format!(
+        "crate::schemas::{}::{}",
+        &schema_enum.module_name,
+        schema_enum.name.to_upper_camel_case()
+    ))
+    .unwrap();
 }
 
 fn gen_one_sequence_fields(
-    t: &OpenXmlSchemaType,
+    schema_type: &OpenXmlSchemaType,
     schema_namespace: &OpenXmlNamespace,
     gen_context: &GenContext,
 ) -> Vec<TokenStream> {
     let mut fields: Vec<TokenStream> = vec![];
 
-    let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
-
-    for child in &t.children {
+    let mut child_map = HashMap::with_capacity(schema_type.children.len());
+    for child in &schema_type.children {
         child_map.insert(&child.name, child);
     }
 
-    for p in &t.particle.items {
-        let child = get_or_panic!(child_map, p.name.as_str());
-
-        let child_type = get_or_panic!(gen_context.type_name_type_map, p.name.as_str());
+    for particle in &schema_type.particle.items {
+        let child = get_or_panic!(child_map, &particle.name);
+        let child_type = get_or_panic!(gen_context.type_name_type_map, particle.name.as_str());
 
         let child_namespace =
             get_or_panic!(gen_context.type_name_namespace_map, child.name.as_str());
 
-        let child_variant_type: Type = if child_namespace.prefix != schema_namespace.prefix {
+        let child_variant_type: Type = if child_namespace.prefix == schema_namespace.prefix {
+            parse_str(&child_type.class_name.to_upper_camel_case()).unwrap()
+        } else {
             parse_str(&format!(
                 "crate::schemas::{}::{}",
                 &child_type.module_name,
                 child_type.class_name.to_upper_camel_case()
             ))
             .unwrap()
-        } else {
-            parse_str(&child_type.class_name.to_upper_camel_case()).unwrap()
         };
 
-        let child_name_ident_raw = if child.property_name.is_empty() {
-            &child.name[child.name.find('/').unwrap() + 1..child.name.len()]
-        } else {
-            &child.property_name
-        };
+        let child_name_ident_raw = child
+            .name
+            .split_once('/')
+            .map(|(_, name)| name)
+            .unwrap_or(&child.property_name);
         let child_name_ident: Ident = parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
 
         let property_comments = if child.property_comments.is_empty() {
@@ -438,12 +419,12 @@ fn gen_one_sequence_fields(
             &child.property_comments
         };
 
-        if p.occurs.is_empty() {
+        if particle.occurs.is_empty() {
             fields.push(quote! {
               #[doc = #property_comments]
               pub #child_name_ident: std::boxed::Box<#child_variant_type>,
             });
-        } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
+        } else if particle.occurs[0].min == 0 && particle.occurs[0].max == 1 {
             fields.push(quote! {
               #[doc = #property_comments]
               pub #child_name_ident: Option<std::boxed::Box<#child_variant_type>>,

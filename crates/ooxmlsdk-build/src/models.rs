@@ -1,4 +1,7 @@
 use serde::{Deserialize, Serialize};
+use syn::{Ident, parse_str};
+
+use crate::utils::escape_snake_case;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
@@ -90,6 +93,27 @@ pub struct OpenXmlSchemaTypeAttribute {
     pub property_comments: String,
     pub version: String,
     pub validators: Vec<OpenXmlSchemaTypeAttributeValidator>,
+}
+
+impl OpenXmlSchemaTypeAttribute {
+    pub fn as_name_ident(&self) -> Ident {
+        let attr_value_ident_raw = if self.property_name.is_empty() {
+            &self.q_name
+        } else {
+            &self.property_name
+        };
+
+        return parse_str(&escape_snake_case(attr_value_ident_raw)).unwrap();
+    }
+
+    pub fn as_name_str(&self) -> &str { return self.q_name.trim_prefix(":"); }
+
+    pub fn is_validator_required(&self) -> bool {
+        return self
+            .validators
+            .iter()
+            .any(|validator| validator.name == "RequiredValidator");
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

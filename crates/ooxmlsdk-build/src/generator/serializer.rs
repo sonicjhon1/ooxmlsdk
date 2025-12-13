@@ -545,49 +545,23 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
     }
 }
 
-fn gen_attr(
-    OpenXmlSchemaTypeAttribute {
-        q_name,
-        property_name,
-        validators,
-        ..
-    }: &OpenXmlSchemaTypeAttribute,
-) -> TokenStream {
-    let attr_name_str = if q_name.starts_with(':') {
-        &q_name[1..q_name.len()]
-    } else {
-        q_name
-    };
+fn gen_attr(schema: &OpenXmlSchemaTypeAttribute) -> TokenStream {
+    let attr_value_ident = schema.as_name_ident();
+    let attr_name_str = schema.as_name_str();
 
-    let attr_name_ident_raw = if property_name.is_empty() {
-        q_name
-    } else {
-        property_name
-    };
+    let attr_name_str_fmt = format!(" {attr_name_str}=\"");
 
-    let attr_name_ident: Ident = parse_str(&escape_snake_case(attr_name_ident_raw)).unwrap();
-
-    let mut required = false;
-
-    for validator in validators {
-        if validator.name == "RequiredValidator" {
-            required = true;
-        }
-    }
-
-    let attr_name_fmt_str = format!(" {attr_name_str}=\"");
-
-    if required {
+    if schema.is_validator_required() {
         quote! {
-          writer.write_str(#attr_name_fmt_str)?;
-          writer.write_str(&quick_xml::escape::escape(self.#attr_name_ident.to_string()))?;
+          writer.write_str(#attr_name_str_fmt)?;
+          writer.write_str(&quick_xml::escape::escape(self.#attr_value_ident))?;
           writer.write_char('"')?;
         }
     } else {
         quote! {
-          if let Some(#attr_name_ident) = &self.#attr_name_ident {
-            writer.write_str(#attr_name_fmt_str)?;
-            writer.write_str(&quick_xml::escape::escape(#attr_name_ident.to_string()))?;
+          if let Some(#attr_value_ident) = &self.#attr_value_ident {
+            writer.write_str(#attr_name_str_fmt)?;
+            writer.write_str(&quick_xml::escape::escape(#attr_value_ident))?;
             writer.write_char('"')?;
           }
         }
