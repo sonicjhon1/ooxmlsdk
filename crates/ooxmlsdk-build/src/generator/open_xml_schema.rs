@@ -21,7 +21,7 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
     );
 
     for schema_enum in &schema.enums {
-        let e_enum_name_ident: Ident = parse_str(&schema_enum.name.to_upper_camel_case()).unwrap();
+        let enum_name_ident: Ident = parse_str(&schema_enum.name.to_upper_camel_case()).unwrap();
 
         let mut variants: Vec<Variant> = vec![];
 
@@ -48,7 +48,7 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
 
         token_stream_list.push(quote! {
           #[derive(Clone, Debug, Default)]
-          pub enum #e_enum_name_ident {
+          pub enum #enum_name_ident {
             #( #variants, )*
           }
         })
