@@ -78,6 +78,7 @@ pub struct OpenXmlSchemaType {
 }
 
 impl OpenXmlSchemaType {
+    #[inline(always)]
     pub fn is_one_sequence_flatten(&self) -> bool {
         (self.composite_type == "OneSequence" || self.particle.kind == "Sequence")
             && self
@@ -118,6 +119,7 @@ pub struct OpenXmlSchemaTypeAttribute {
 }
 
 impl OpenXmlSchemaTypeAttribute {
+    #[inline(always)]
     pub fn as_name_ident(&self) -> Ident {
         let attr_value_ident_raw = if self.property_name.is_empty() {
             &self.q_name
@@ -128,8 +130,10 @@ impl OpenXmlSchemaTypeAttribute {
         return parse_str(&escape_snake_case(attr_value_ident_raw)).unwrap();
     }
 
+    #[inline(always)]
     pub fn as_name_str(&self) -> &str { return self.q_name.trim_prefix(":"); }
 
+    #[inline(always)]
     pub fn split_type_enum_value_trimmed(&self) -> (&str, &str) {
         self.r#type
             .rsplit_once('.')
@@ -142,6 +146,7 @@ impl OpenXmlSchemaTypeAttribute {
             .unwrap()
     }
 
+    #[inline(always)]
     pub fn is_validator_required(&self) -> bool {
         return self
             .validators
@@ -219,6 +224,7 @@ pub struct OpenXmlSchemaTypeParticle {
 }
 
 impl OpenXmlSchemaTypeParticle {
+    #[inline(always)]
     pub fn check_particle_version(&mut self) {
         self.items
             .retain(|x| check_office_version(&x.initial_version));
