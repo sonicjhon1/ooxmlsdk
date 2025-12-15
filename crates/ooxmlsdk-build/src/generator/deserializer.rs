@@ -803,7 +803,7 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
     parse2(if schema.r#type.starts_with("ListValue<") {
     quote! {
       #attr_name_literal => {
-        #attr_name_ident = Some(decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+        #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
       }
     }
   } else if schema.r#type.starts_with("EnumValue<") {
@@ -850,7 +850,7 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
       "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
       | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
         #attr_name_literal => {
-          #attr_name_ident = Some(decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+          #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
         }
       },
       "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
