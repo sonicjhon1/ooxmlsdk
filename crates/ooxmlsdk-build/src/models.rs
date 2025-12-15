@@ -46,6 +46,18 @@ pub struct OpenXmlPartChild {
     pub is_special_embedded_part: bool,
 }
 
+impl OpenXmlPartChild {
+    pub fn as_occurrence(&self) -> Occurrence {
+        if self.max_occurs_great_than_one {
+            Occurrence::Repeated
+        } else if self.min_occurs_is_non_zero {
+            Occurrence::Required
+        } else {
+            Occurrence::Optional
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct OpenXmlSchema {
