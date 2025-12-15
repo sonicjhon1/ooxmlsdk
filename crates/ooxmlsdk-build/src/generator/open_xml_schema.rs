@@ -31,15 +31,15 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
             if i == 0 {
                 variants.push(
                     parse2(quote! {
-                      #[default]
-                      #variant_ident
+                        #[default]
+                        #variant_ident
                     })
                     .unwrap(),
                 );
             } else {
                 variants.push(
                     parse2(quote! {
-                      #variant_ident
+                        #variant_ident
                     })
                     .unwrap(),
                 );
@@ -47,10 +47,10 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
         }
 
         token_stream_list.push(quote! {
-          #[derive(Clone, Debug, Default)]
-          pub enum #enum_name_ident {
-            #( #variants, )*
-          }
+            #[derive(Clone, Debug, Default)]
+            pub enum #enum_name_ident {
+                #( #variants, )*
+            }
         })
     }
 
@@ -69,7 +69,7 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
             let simple_type_name = gen_xml_content_type(schema_type, schema_namespace, gen_context);
 
             fields.push(quote! {
-              pub xml_content: Option<#simple_type_name>,
+                pub xml_content: Option<#simple_type_name>,
             });
         } else if schema_type.base_class == "OpenXmlLeafElement" {
             for attr in &schema_type.attributes {
@@ -88,15 +88,15 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
                     == "http://schemas.openxmlformats.org/drawingml/2006/picture"
             {
                 fields.push(quote! {
-                  pub xmlns: Option<String>,
+                    pub xmlns: Option<String>,
                 });
 
                 fields.push(quote! {
-                  pub xmlns_map: std::collections::HashMap<String, String>,
+                    pub xmlns_map: std::collections::HashMap<String, String>,
                 });
 
                 fields.push(quote! {
-                  pub mc_ignorable: Option<String>,
+                    pub mc_ignorable: Option<String>,
                 });
             }
 
@@ -166,7 +166,7 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
                     gen_xml_content_type(base_class_type, schema_namespace, gen_context);
 
                 fields.push(quote! {
-                  pub xml_content: Option<#simple_type_name>,
+                    pub xml_content: Option<#simple_type_name>,
                 });
             }
         } else {
@@ -193,22 +193,22 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
         };
 
         token_stream_list.push(quote! {
-          #[doc = #summary_doc]
-          #[doc = ""]
-          #[doc = #version_doc]
-          #[doc = ""]
-          #[doc = #qualified_doc]
-          #[derive(Clone, Debug, Default)]
-          pub struct #struct_name_ident {
-            #( #fields )*
-          }
+            #[doc = #summary_doc]
+            #[doc = ""]
+            #[doc = #version_doc]
+            #[doc = ""]
+            #[doc = #qualified_doc]
+            #[derive(Clone, Debug, Default)]
+            pub struct #struct_name_ident {
+                #( #fields )*
+            }
 
-          #child_choice_enum_option
+            #child_choice_enum_option
         });
     }
 
     quote! {
-      #( #token_stream_list )*
+        #( #token_stream_list )*
     }
 }
 
@@ -278,21 +278,21 @@ fn gen_attr(
 
     if schema.is_validator_required() {
         quote! {
-          #[doc = #property_comments_doc]
-          #[doc = ""]
-          #[doc = #version_doc]
-          #[doc = ""]
-          #[doc = #qualified_doc]
-          pub #attr_name_ident: #type_ident,
+            #[doc = #property_comments_doc]
+            #[doc = ""]
+            #[doc = #version_doc]
+            #[doc = ""]
+            #[doc = #qualified_doc]
+            pub #attr_name_ident: #type_ident,
         }
     } else {
         quote! {
-          #[doc = #property_comments_doc]
-          #[doc = ""]
-          #[doc = #version_doc]
-          #[doc = ""]
-          #[doc = #qualified_doc]
-          pub #attr_name_ident: Option<#type_ident>,
+            #[doc = #property_comments_doc]
+            #[doc = ""]
+            #[doc = #version_doc]
+            #[doc = ""]
+            #[doc = #qualified_doc]
+            pub #attr_name_ident: Option<#type_ident>,
         }
     }
 }
@@ -311,7 +311,7 @@ fn gen_children(
         parse_str(&format!("{}ChildChoice", class_name.to_upper_camel_case())).unwrap();
 
     let field_option = Some(quote! {
-      pub children: Vec<#child_choice_enum_ident>,
+        pub children: Vec<#child_choice_enum_ident>,
     });
 
     let mut variants: Vec<TokenStream> = vec![];
@@ -335,16 +335,16 @@ fn gen_children(
         let child_variant_name_ident = child.as_last_name_ident();
 
         variants.push(quote! {
-          #child_variant_name_ident(std::boxed::Box<#child_variant_type>),
+            #child_variant_name_ident(std::boxed::Box<#child_variant_type>),
         });
     }
 
     let enum_option = Some(
         parse2(quote! {
-          #[derive(Clone, Debug)]
-          pub enum #child_choice_enum_ident {
-            #( #variants )*
-          }
+            #[derive(Clone, Debug)]
+            pub enum #child_choice_enum_ident {
+                #( #variants )*
+            }
         })
         .unwrap(),
     );
