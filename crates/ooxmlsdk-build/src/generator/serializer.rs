@@ -154,11 +154,14 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
-                for p in &schema_type.particle.items {
-                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
+                for schema_type_particle in &schema_type.particle.items {
+                    let child = child_map
+                        .get(schema_type_particle.name.as_str())
+                        .ok_or(&schema_type_particle.name)
+                        .unwrap();
                     let child_name_ident = child.as_property_name_ident();
 
-                    match p.as_occurrence() {
+                    match schema_type_particle.as_occurrence() {
                         Occurrence::Required => {
                             child_stmt_list.push(
                                 parse2(quote! {
@@ -293,11 +296,14 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
-                for p in &schema_type.particle.items {
-                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
+                for schema_type_particle in &schema_type.particle.items {
+                    let child = child_map
+                        .get(schema_type_particle.name.as_str())
+                        .ok_or(&schema_type_particle.name)
+                        .unwrap();
                     let child_name_ident = child.as_property_name_ident();
 
-                    match p.as_occurrence() {
+                    match schema_type_particle.as_occurrence() {
                         Occurrence::Required => {
                             child_stmt_list.push(
                                 parse2(quote! {

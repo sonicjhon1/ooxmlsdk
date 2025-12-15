@@ -292,13 +292,13 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             if schema_type.is_one_sequence_flatten()
                 && base_class_type.composite_type == "OneSequence"
             {
-                for p in &schema_type.particle.items {
-                    let child = get_or_panic!(child_map, p.name.as_str());
+                for schema_type_particle in &schema_type.particle.items {
+                    let child = get_or_panic!(child_map, schema_type_particle.name.as_str());
 
                     let child_property_name_str = child.as_property_name_str();
                     let child_property_name_ident = child.as_property_name_ident();
 
-                    match p.as_occurrence() {
+                    match schema_type_particle.as_occurrence() {
                         Occurrence::Required => {
                             field_declaration_list.push(
                                 parse2(quote! {
@@ -374,11 +374,11 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             if schema_type.is_one_sequence_flatten()
                 && base_class_type.composite_type == "OneSequence"
             {
-                for p in &schema_type.particle.items {
-                    let child = get_or_panic!(child_map, p.name.as_str());
+                for schema_type_particle in &schema_type.particle.items {
+                    let child = get_or_panic!(child_map, schema_type_particle.name.as_str());
 
                     loop_children_match_list.push(gen_one_sequence_match_arm(
-                        p,
+                        schema_type_particle,
                         child,
                         gen_context,
                         &mut loop_children_suffix_match_set,

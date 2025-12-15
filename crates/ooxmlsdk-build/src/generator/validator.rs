@@ -58,11 +58,14 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                     child_map.insert(&child.name, child);
                 }
 
-                for p in &t.particle.items {
-                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
+                for schema_type_particle in &t.particle.items {
+                    let child = child_map
+                        .get(schema_type_particle.name.as_str())
+                        .ok_or(&schema_type_particle.name)
+                        .unwrap();
                     let child_name_ident = child.as_property_name_ident();
 
-                    match p.as_occurrence() {
+                    match schema_type_particle.as_occurrence() {
                         Occurrence::Required => {
                             children_validator_stmt_list.push(
                                 parse2(quote! {
@@ -162,11 +165,14 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                     child_map.insert(&child.name, child);
                 }
 
-                for p in &t.particle.items {
-                    let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
+                for schema_type_particle in &t.particle.items {
+                    let child = child_map
+                        .get(schema_type_particle.name.as_str())
+                        .ok_or(&schema_type_particle.name)
+                        .unwrap();
                     let child_name_ident = child.as_property_name_ident();
 
-                    match p.as_occurrence() {
+                    match schema_type_particle.as_occurrence() {
                         Occurrence::Required => {
                             children_validator_stmt_list.push(
                                 parse2(quote! {
