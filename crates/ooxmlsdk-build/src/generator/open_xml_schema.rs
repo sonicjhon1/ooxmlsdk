@@ -225,7 +225,7 @@ fn gen_attr(
         "String".to_string()
     } else if schema.r#type.starts_with("EnumValue<") {
         let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
-        let enum_name = enum_name.to_upper_camel_case();
+        let enum_name_formatted = enum_name.to_upper_camel_case();
 
         let enum_prefix = gen_context
             .typed_namespaces
@@ -243,19 +243,22 @@ fn gen_attr(
                     .any(|schema_enum| schema_enum.name == enum_name)
                     .then_some(typed_namespace.prefix.as_str());
             })
-            .unwrap_or("");
+            .unwrap();
 
         let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
 
         if enum_namespace.prefix == schema_namespace.prefix {
-            enum_name
+            enum_name_formatted
         } else {
             let enum_schema = get_or_panic!(
                 gen_context.prefix_schema_map,
                 enum_namespace.prefix.as_str()
             );
 
-            format!("crate::schemas::{}::{enum_name}", enum_schema.module_name)
+            format!(
+                "crate::schemas::{}::{enum_name_formatted}",
+                enum_schema.module_name
+            )
         }
     } else {
         format!("crate::schemas::simple_type::{}", &schema.r#type)
