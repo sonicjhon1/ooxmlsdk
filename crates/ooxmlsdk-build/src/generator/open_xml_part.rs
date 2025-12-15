@@ -718,13 +718,16 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
                 reader: R,
             ) -> Result<Self, crate::common::SdkError> {
                 let mut archive = zip::ZipArchive::new(reader)?;
+                let mut file_path_set = std::collections::HashSet::with_capacity(archive.len());
 
-                let mut file_path_set: std::collections::HashSet<String> = (0..archive.len())
-                    .filter_map(|i| archive.by_index(i).ok())
-                    .filter_map(|file| file.enclosed_name().map(|p| p.to_string_lossy().into_owned()))
-                    .collect();
+                for i in 0..archive.len() {
+                    let file = archive.by_index(i)?;
+                    if let Some(path) = file.enclosed_name() {
+                        file_path_set.insert(path.to_string_lossy().into_owned());
+                    }
+                }
 
-              Self::new_from_archive("", "", "", &file_path_set, &mut archive)
+                Self::new_from_archive("", "", "", &file_path_set, &mut archive)
             }
         })
         .unwrap();
