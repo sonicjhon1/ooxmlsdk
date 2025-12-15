@@ -243,7 +243,7 @@ fn gen_attr(
                     .any(|schema_enum| schema_enum.name == enum_name)
                     .then_some(typed_namespace.prefix.as_str());
             })
-            .unwrap();
+            .unwrap_or("");
 
         let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
 
