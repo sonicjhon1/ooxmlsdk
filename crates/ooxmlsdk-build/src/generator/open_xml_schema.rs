@@ -226,21 +226,23 @@ fn gen_attr(
     } else if schema.r#type.starts_with("EnumValue<") {
         let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
 
-        let mut enum_prefix = "";
-        for typed_namespace in &gen_context.typed_namespaces {
-            if enum_typed_namespace_str == typed_namespace.namespace {
-                let enum_schema = get_or_panic!(
-                    gen_context.prefix_schema_map,
-                    typed_namespace.prefix.as_str()
-                );
+        let enum_prefix = gen_context
+            .typed_namespaces
+            .iter()
+            .find_map(|typed_namespace| {
+                if typed_namespace.namespace != enum_typed_namespace_str {
+                    return None;
+                };
 
-                for enum_schema_enum in &enum_schema.enums {
-                    if enum_schema_enum.name == enum_name {
-                        enum_prefix = &typed_namespace.prefix;
-                    }
-                }
-            }
-        }
+                return gen_context
+                    .prefix_schema_map
+                    .get(typed_namespace.prefix.as_str())?
+                    .enums
+                    .iter()
+                    .any(|schema_enum| schema_enum.name == enum_name)
+                    .then_some(typed_namespace.prefix.as_str());
+            })
+            .unwrap();
 
         let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
 
