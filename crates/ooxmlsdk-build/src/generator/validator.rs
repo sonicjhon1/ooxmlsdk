@@ -58,14 +58,7 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 for p in &t.particle.items {
                     let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
 
-                    let child_name_ident_raw = if child.property_name.is_empty() {
-                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
-                    } else {
-                        &child.property_name
-                    };
-
-                    let child_name_ident: Ident =
-                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
+                    let child_name_ident = child.as_property_name_ident();
 
                     if p.occurs.is_empty() {
                         children_validator_stmt_list.push(
@@ -78,13 +71,13 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                         );
                     } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
                         children_validator_stmt_list.push(
-              parse2(quote! {
-                if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
-                  return Ok(false);
-                }
-              })
-              .unwrap(),
-            );
+                            parse2(quote! {
+                              if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
+                                return Ok(false);
+                              }
+                            })
+                            .unwrap(),
+                        );
                     } else {
                         children_validator_stmt_list.push(
                             parse2(quote! {
