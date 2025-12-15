@@ -235,6 +235,23 @@ impl OpenXmlSchemaTypeParticle {
             }
         }
     }
+
+    pub fn as_occurrence(&self) -> Occurrence {
+        if self.occurs.is_empty() {
+            Occurrence::Required
+        } else if self.occurs[0].min == 0 && self.occurs[0].max == 1 {
+            Occurrence::Optional
+        } else {
+            Occurrence::Repeated
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Occurrence {
+    Required,
+    Optional,
+    Repeated,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

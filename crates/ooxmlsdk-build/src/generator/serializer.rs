@@ -2,12 +2,12 @@ use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
-use syn::{Arm, Ident, ItemFn, ItemImpl, Stmt, Type, parse_str, parse2};
+use syn::{Arm, ItemFn, ItemImpl, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
-    models::{OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
-    utils::{escape_snake_case, get_or_panic},
+    models::{Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
+    utils::get_or_panic,
 };
 
 pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
@@ -156,42 +156,38 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
                 for p in &schema_type.particle.items {
                     let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
+                    let child_name_ident = child.as_property_name_ident();
 
-                    let child_name_ident_raw = if child.property_name.is_empty() {
-                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
-                    } else {
-                        &child.property_name
+                    match p.as_occurrence() {
+                        Occurrence::Required => {
+                            child_stmt_list.push(
+                                parse2(quote! {
+                                  self.#child_name_ident.write_xml(writer, xmlns_prefix)?;
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Optional => {
+                            child_stmt_list.push(
+                                parse2(quote! {
+                                  if let Some(#child_name_ident) = &self.#child_name_ident {
+                                    #child_name_ident.write_xml(writer, xmlns_prefix)?;
+                                  }
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Repeated => {
+                            child_stmt_list.push(
+                                parse2(quote! {
+                                  for child in &self.#child_name_ident {
+                                    child.write_xml(writer, xmlns_prefix)?;
+                                  }
+                                })
+                                .unwrap(),
+                            );
+                        }
                     };
-
-                    let child_name_ident: Ident =
-                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
-
-                    if p.occurs.is_empty() {
-                        child_stmt_list.push(
-                            parse2(quote! {
-                              self.#child_name_ident.write_xml(writer, xmlns_prefix)?;
-                            })
-                            .unwrap(),
-                        );
-                    } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
-                        child_stmt_list.push(
-                            parse2(quote! {
-                              if let Some(#child_name_ident) = &self.#child_name_ident {
-                                #child_name_ident.write_xml(writer, xmlns_prefix)?;
-                              }
-                            })
-                            .unwrap(),
-                        );
-                    } else {
-                        child_stmt_list.push(
-                            parse2(quote! {
-                              for child in &self.#child_name_ident {
-                                child.write_xml(writer, xmlns_prefix)?;
-                              }
-                            })
-                            .unwrap(),
-                        );
-                    }
                 }
 
                 children_writer = quote! {
@@ -299,41 +295,37 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
                 for p in &schema_type.particle.items {
                     let child = child_map.get(p.name.as_str()).ok_or(&p.name).unwrap();
+                    let child_name_ident = child.as_property_name_ident();
 
-                    let child_name_ident_raw = if child.property_name.is_empty() {
-                        child.name.rsplit('/').next().ok_or(&child.name).unwrap()
-                    } else {
-                        &child.property_name
-                    };
-
-                    let child_name_ident: Ident =
-                        parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
-
-                    if p.occurs.is_empty() {
-                        child_stmt_list.push(
-                            parse2(quote! {
-                              self.#child_name_ident.write_xml(writer, xmlns_prefix)?;
-                            })
-                            .unwrap(),
-                        );
-                    } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
-                        child_stmt_list.push(
-                            parse2(quote! {
-                              if let Some(#child_name_ident) = &self.#child_name_ident {
-                                #child_name_ident.write_xml(writer, xmlns_prefix)?;
-                              }
-                            })
-                            .unwrap(),
-                        );
-                    } else {
-                        child_stmt_list.push(
-                            parse2(quote! {
-                              for child in &self.#child_name_ident {
-                                child.write_xml(writer, xmlns_prefix)?;
-                              }
-                            })
-                            .unwrap(),
-                        );
+                    match p.as_occurrence() {
+                        Occurrence::Required => {
+                            child_stmt_list.push(
+                                parse2(quote! {
+                                  self.#child_name_ident.write_xml(writer, xmlns_prefix)?;
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Optional => {
+                            child_stmt_list.push(
+                                parse2(quote! {
+                                  if let Some(#child_name_ident) = &self.#child_name_ident {
+                                    #child_name_ident.write_xml(writer, xmlns_prefix)?;
+                                  }
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Repeated => {
+                            child_stmt_list.push(
+                                parse2(quote! {
+                                  for child in &self.#child_name_ident {
+                                    child.write_xml(writer, xmlns_prefix)?;
+                                  }
+                                })
+                                .unwrap(),
+                            );
+                        }
                     }
                 }
 

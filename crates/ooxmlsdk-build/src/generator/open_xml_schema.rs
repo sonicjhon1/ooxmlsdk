@@ -6,7 +6,7 @@ use syn::{Ident, ItemEnum, Type, Variant, parse_str, parse2};
 use crate::{
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
+        Occurrence, OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
         OpenXmlSchemaTypeChild,
     },
     utils::get_or_panic,
@@ -416,21 +416,19 @@ fn gen_one_sequence_fields(
             &child.property_comments
         };
 
-        if particle.occurs.is_empty() {
-            fields.push(quote! {
-              #[doc = #property_comments]
-              pub #child_property_name_ident: std::boxed::Box<#child_variant_type>,
-            });
-        } else if particle.occurs[0].min == 0 && particle.occurs[0].max == 1 {
-            fields.push(quote! {
-              #[doc = #property_comments]
-              pub #child_property_name_ident: Option<std::boxed::Box<#child_variant_type>>,
-            });
-        } else {
-            fields.push(quote! {
-              #[doc = #property_comments]
-              pub #child_property_name_ident: Vec<#child_variant_type>,
-            });
+        match particle.as_occurrence() {
+            Occurrence::Required => fields.push(quote! {
+                #[doc = #property_comments]
+                pub #child_property_name_ident: std::boxed::Box<#child_variant_type>,
+            }),
+            Occurrence::Optional => fields.push(quote! {
+                #[doc = #property_comments]
+                pub #child_property_name_ident: Option<std::boxed::Box<#child_variant_type>>,
+            }),
+            Occurrence::Repeated => fields.push(quote! {
+                #[doc = #property_comments]
+                pub #child_property_name_ident: Vec<#child_variant_type>,
+            }),
         }
     }
 

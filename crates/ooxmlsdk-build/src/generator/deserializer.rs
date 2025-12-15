@@ -7,7 +7,7 @@ use syn::{Arm, Ident, ItemFn, ItemImpl, LitByteStr, Stmt, Type, parse_str, parse
 use crate::{
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
+        Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
         OpenXmlSchemaTypeParticle,
     },
     utils::get_or_panic,
@@ -205,38 +205,40 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                     let child_property_name_str = child.as_property_name_str();
                     let child_property_name_ident = child.as_property_name_ident();
 
-                    if schema_type_particle.occurs.is_empty() {
-                        field_declaration_list.push(
-                            parse2(quote! {
-                              let mut #child_property_name_ident = None;
-                            })
-                            .unwrap(),
-                        );
+                    match schema_type_particle.as_occurrence() {
+                        Occurrence::Required => {
+                            field_declaration_list.push(
+                                parse2(quote! {
+                                    let mut #child_property_name_ident = None;
+                                })
+                                .unwrap(),
+                            );
 
-                        field_unwrap_list.push(
-                            parse2(quote! {
-                              let #child_property_name_ident = #child_property_name_ident
-                                .ok_or_else(|| crate::common::SdkError::CommonError(#child_property_name_str.to_string()))?;
-                            })
-                            .unwrap(),
-                        );
-                    } else if schema_type_particle.occurs[0].min == 0
-                        && schema_type_particle.occurs[0].max == 1
-                    {
-                        field_declaration_list.push(
-                            parse2(quote! {
-                              let mut #child_property_name_ident = None;
-                            })
-                            .unwrap(),
-                        );
-                    } else {
-                        field_declaration_list.push(
-                            parse2(quote! {
-                              let mut #child_property_name_ident = vec![];
-                            })
-                            .unwrap(),
-                        );
-                    }
+                            field_unwrap_list.push(
+                                parse2(quote! {
+                                    let #child_property_name_ident = #child_property_name_ident
+                                        .ok_or_else(|| crate::common::SdkError::CommonError(#child_property_name_str.to_string()))?;
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Optional => {
+                            field_declaration_list.push(
+                                parse2(quote! {
+                                  let mut #child_property_name_ident = None;
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Repeated => {
+                            field_declaration_list.push(
+                                parse2(quote! {
+                                  let mut #child_property_name_ident = vec![];
+                                })
+                                .unwrap(),
+                            );
+                        }
+                    };
 
                     field_ident_list.push(child_property_name_ident);
 
@@ -296,35 +298,39 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                     let child_property_name_str = child.as_property_name_str();
                     let child_property_name_ident = child.as_property_name_ident();
 
-                    if p.occurs.is_empty() {
-                        field_declaration_list.push(
-                            parse2(quote! {
-                                let mut #child_property_name_ident = None;
-                            })
-                            .unwrap(),
-                        );
+                    match p.as_occurrence() {
+                        Occurrence::Required => {
+                            field_declaration_list.push(
+                                parse2(quote! {
+                                    let mut #child_property_name_ident = None;
+                                })
+                                .unwrap(),
+                            );
 
-                        field_unwrap_list.push(
-                            parse2(quote! {
-                                let #child_property_name_ident = #child_property_name_ident
-                                    .ok_or_else(|| crate::common::SdkError::CommonError(#child_property_name_str.to_string()))?;
-                            })
+                            field_unwrap_list.push(
+                                parse2(quote! {
+                                    let #child_property_name_ident = #child_property_name_ident
+                                        .ok_or_else(|| crate::common::SdkError::CommonError(#child_property_name_str.to_string()))?;
+                                })
                             .unwrap(),
                         );
-                    } else if p.occurs[0].min == 0 && p.occurs[0].max == 1 {
-                        field_declaration_list.push(
-                            parse2(quote! {
-                                let mut #child_property_name_ident = None;
-                            })
-                            .unwrap(),
-                        );
-                    } else {
-                        field_declaration_list.push(
-                            parse2(quote! {
-                                let mut #child_property_name_ident = vec![];
-                            })
-                            .unwrap(),
-                        );
+                        }
+                        Occurrence::Optional => {
+                            field_declaration_list.push(
+                                parse2(quote! {
+                                    let mut #child_property_name_ident = None;
+                                })
+                                .unwrap(),
+                            );
+                        }
+                        Occurrence::Repeated => {
+                            field_declaration_list.push(
+                                parse2(quote! {
+                                    let mut #child_property_name_ident = vec![];
+                                })
+                                .unwrap(),
+                            );
+                        }
                     }
 
                     field_ident_list.push(child_property_name_ident);
@@ -649,48 +655,45 @@ fn gen_one_sequence_match_arm(
     ))
     .unwrap();
 
+    // TODO: Simplify again
     if loop_children_suffix_match_set.insert(child_suffix_last_name.to_string()) {
-        if schema_type_particle.occurs.is_empty()
-            || (schema_type_particle.occurs[0].min == 0 && schema_type_particle.occurs[0].max == 1)
-        {
-            parse2(quote! {
-              #child_last_name_literal | #child_suffix_last_name_literal => {
-                #child_property_name_ident = Some(std::boxed::Box::new(
-                  #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                ));
-              }
+        match schema_type_particle.as_occurrence() {
+            Occurrence::Required | Occurrence::Optional => parse2(quote! {
+                #child_last_name_literal | #child_suffix_last_name_literal => {
+                    #child_property_name_ident = Some(std::boxed::Box::new(
+                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
+                    ));
+                }
             })
-            .unwrap()
-        } else {
-            parse2(quote! {
-              #child_last_name_literal | #child_suffix_last_name_literal => {
-                #child_property_name_ident.push(
-                  #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                );
-              }
+            .unwrap(),
+            Occurrence::Repeated => parse2(quote! {
+                #child_last_name_literal | #child_suffix_last_name_literal => {
+                    #child_property_name_ident.push(
+                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
+                    );
+                }
             })
-            .unwrap()
+            .unwrap(),
         }
-    } else if schema_type_particle.occurs.is_empty()
-        || (schema_type_particle.occurs[0].min == 0 && schema_type_particle.occurs[0].max == 1)
-    {
-        parse2(quote! {
-          #child_last_name_literal => {
-            #child_property_name_ident = Some(std::boxed::Box::new(
-              #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-            ));
-          }
-        })
-        .unwrap()
     } else {
-        parse2(quote! {
-          #child_last_name_literal => {
-            #child_property_name_ident.push(
-              #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-            );
-          }
-        })
-        .unwrap()
+        match schema_type_particle.as_occurrence() {
+            Occurrence::Required | Occurrence::Optional => parse2(quote! {
+                #child_last_name_literal => {
+                    #child_property_name_ident = Some(std::boxed::Box::new(
+                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
+                    ));
+                }
+            })
+            .unwrap(),
+            Occurrence::Repeated => parse2(quote! {
+                #child_last_name_literal => {
+                    #child_property_name_ident.push(
+                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
+                    );
+                }
+            })
+            .unwrap(),
+        }
     }
 }
 
