@@ -20,12 +20,13 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
         schema.target_namespace.as_str()
     );
 
-    for e in &schema.enums {
-        let e_enum_name_ident: Ident = parse_str(&e.name.to_upper_camel_case()).unwrap();
+    for schema_enum in &schema.enums {
+        let e_enum_name_ident: Ident = parse_str(&schema_enum.name.to_upper_camel_case()).unwrap();
 
         let mut variants: Vec<Variant> = vec![];
 
-        for (i, OpenXmlSchemaEnumFacet { name, value, .. }) in e.facets.iter().enumerate() {
+        for (i, OpenXmlSchemaEnumFacet { name, value, .. }) in schema_enum.facets.iter().enumerate()
+        {
             let variant_ident_raw = if name.is_empty() { value } else { name };
             let variant_ident: Ident =
                 parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
@@ -225,33 +226,35 @@ fn gen_attr(
     } else if schema.r#type.starts_with("EnumValue<") {
         let (enum_typed_namespace_str, enum_name) = schema.split_type_trimmed();
 
-        let mut e_prefix = "";
+        let mut enum_prefix = "";
         for typed_namespace in &gen_context.typed_namespaces {
             if enum_typed_namespace_str == typed_namespace.namespace {
-                let e_schema = get_or_panic!(
+                let enum_schema = get_or_panic!(
                     gen_context.prefix_schema_map,
                     typed_namespace.prefix.as_str()
                 );
 
-                for e in &e_schema.enums {
-                    if e.name == enum_name {
-                        e_prefix = &typed_namespace.prefix;
+                for enum_schema_enum in &enum_schema.enums {
+                    if enum_schema_enum.name == enum_name {
+                        enum_prefix = &typed_namespace.prefix;
                     }
                 }
             }
         }
 
-        let e_namespace = get_or_panic!(gen_context.prefix_namespace_map, e_prefix);
+        let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
 
-        if e_namespace.prefix == schema_namespace.prefix {
+        if enum_namespace.prefix == schema_namespace.prefix {
             parse_str(&enum_name.to_upper_camel_case()).unwrap()
         } else {
-            let e_schema =
-                get_or_panic!(gen_context.prefix_schema_map, e_namespace.prefix.as_str());
+            let enum_schema = get_or_panic!(
+                gen_context.prefix_schema_map,
+                enum_namespace.prefix.as_str()
+            );
 
             parse_str(&format!(
                 "crate::schemas::{}::{}",
-                e_schema.module_name,
+                enum_schema.module_name,
                 enum_name.to_upper_camel_case()
             ))
             .unwrap()
