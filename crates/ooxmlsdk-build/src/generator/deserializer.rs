@@ -637,16 +637,13 @@ fn gen_one_sequence_match_arm(
 ) -> Arm {
     let child_type = get_or_panic!(gen_context.type_name_type_map, child.name.as_str());
 
-    let (_, child_last_name) = child.split_name();
-    let (_, child_suffix_last_name) = child.split_last_name();
-
+    let (_, child_prefixed_name) = child.split_name();
+    let (_, child_name) = child.split_last_name();
     let child_property_name_ident = child.as_property_name_ident();
 
-    let child_last_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_last_name}\"")).unwrap();
-
-    let child_suffix_last_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_suffix_last_name}\"")).unwrap();
+    let child_prefixed_name_literal: LitByteStr =
+        parse_str(&format!("b\"{child_prefixed_name}\"")).unwrap();
+    let child_name_literal: LitByteStr = parse_str(&format!("b\"{child_name}\"")).unwrap();
 
     let child_variant_type: Type = parse_str(&format!(
         "crate::schemas::{}::{}",
@@ -656,10 +653,10 @@ fn gen_one_sequence_match_arm(
     .unwrap();
 
     // TODO: Simplify again
-    if loop_children_suffix_match_set.insert(child_suffix_last_name.to_string()) {
+    if loop_children_suffix_match_set.insert(child_name.to_string()) {
         match schema_type_particle.as_occurrence() {
             Occurrence::Required | Occurrence::Optional => parse2(quote! {
-                #child_last_name_literal | #child_suffix_last_name_literal => {
+                #child_prefixed_name_literal | #child_name_literal => {
                     #child_property_name_ident = Some(std::boxed::Box::new(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     ));
@@ -667,7 +664,7 @@ fn gen_one_sequence_match_arm(
             })
             .unwrap(),
             Occurrence::Repeated => parse2(quote! {
-                #child_last_name_literal | #child_suffix_last_name_literal => {
+                #child_prefixed_name_literal | #child_name_literal => {
                     #child_property_name_ident.push(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     );
@@ -678,7 +675,7 @@ fn gen_one_sequence_match_arm(
     } else {
         match schema_type_particle.as_occurrence() {
             Occurrence::Required | Occurrence::Optional => parse2(quote! {
-                #child_last_name_literal => {
+                #child_prefixed_name_literal => {
                     #child_property_name_ident = Some(std::boxed::Box::new(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     ));
@@ -686,7 +683,7 @@ fn gen_one_sequence_match_arm(
             })
             .unwrap(),
             Occurrence::Repeated => parse2(quote! {
-                #child_last_name_literal => {
+                #child_prefixed_name_literal => {
                     #child_property_name_ident.push(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     );
@@ -705,14 +702,12 @@ fn gen_child_match_arm(
 ) -> Arm {
     let child_type = get_or_panic!(gen_context.type_name_type_map, child.name.as_str());
 
-    let (_, child_last_name) = child.split_name();
-    let (_, child_suffix_last_name) = child.split_last_name();
+    let (_, child_prefixed_name) = child.split_name();
+    let (_, child_name) = child.split_last_name();
 
-    let child_last_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_last_name}\"")).unwrap();
-
-    let child_suffix_last_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_suffix_last_name}\"")).unwrap();
+    let child_prefixed_name_literal: LitByteStr =
+        parse_str(&format!("b\"{child_prefixed_name}\"")).unwrap();
+    let child_name_literal: LitByteStr = parse_str(&format!("b\"{child_name}\"")).unwrap();
 
     let child_variant_name_ident = child.as_last_name_ident();
 
@@ -723,9 +718,9 @@ fn gen_child_match_arm(
     ))
     .unwrap();
 
-    if loop_children_suffix_match_set.insert(child_suffix_last_name.to_string()) {
+    if loop_children_suffix_match_set.insert(child_name.to_string()) {
         return parse2(quote! {
-          #child_last_name_literal | #child_suffix_last_name_literal => {
+          #child_prefixed_name_literal | #child_name_literal => {
             children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
               #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
             )));
@@ -735,7 +730,7 @@ fn gen_child_match_arm(
     };
 
     return parse2(quote! {
-      #child_last_name_literal => {
+      #child_prefixed_name_literal => {
         children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
           #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
         )));
