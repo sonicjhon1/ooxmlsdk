@@ -462,14 +462,14 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                                 mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
                             }
                             key => {
-                                if key.starts_with(b"xmlns:") {
+                                if let Some(xmlns_key) = key.strip_prefix(b"xmlsns:") {
                                     xmlns_map.insert(
-                                        String::from_utf8_lossy(&key[6..]).to_string(),
+                                        String::from_utf8_lossy(xmlns_key).to_string(),
                                         attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned(),
                                     );
                                 }
                             }
-                          }
+                        }
                     }
                 })
                 .unwrap(),
