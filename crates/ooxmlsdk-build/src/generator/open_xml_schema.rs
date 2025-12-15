@@ -55,6 +55,8 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
     }
 
     for schema_type in &schema.types {
+        let (type_base_class, type_prefixed_name) = schema_type.split_name();
+
         let mut fields: Vec<TokenStream> = vec![];
 
         let mut child_choice_enum_option: Option<ItemEnum> = None;
@@ -124,7 +126,7 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
         } else if schema_type.is_derived {
             let base_class_type = get_or_panic!(
                 gen_context.type_name_type_map,
-                &schema_type.name[0..schema_type.name.find('/').unwrap() + 1]
+                format!("{type_base_class}/").as_str()
             );
 
             for attr in &schema_type.attributes {
@@ -186,8 +188,7 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
             " When the object is serialized out as xml, it's qualified name is .".to_string()
         } else {
             format!(
-                " When the object is serialized out as xml, it's qualified name is {}.",
-                schema_type.split_name().1
+                " When the object is serialized out as xml, it's qualified name is {type_prefixed_name}.",
             )
         };
 
