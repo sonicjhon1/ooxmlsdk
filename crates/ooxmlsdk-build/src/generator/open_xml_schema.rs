@@ -9,7 +9,7 @@ use crate::{
         OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaType,
         OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
     },
-    utils::{escape_snake_case, escape_upper_camel_case, get_or_panic},
+    utils::{escape_upper_camel_case, get_or_panic},
 };
 
 pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
@@ -319,19 +319,19 @@ fn gen_children(
         let child_type = get_or_panic!(gen_context.type_name_type_map, child.name.as_str());
         let child_namespace =
             get_or_panic!(gen_context.type_name_namespace_map, child.name.as_str());
+        let child_schema_name = child_type.class_name.to_upper_camel_case();
+
+        let child_variant_type_raw = if child_namespace.prefix == schema_namespace.prefix {
+            child_schema_name
+        } else {
+            format!(
+                "crate::schemas::{}::{child_schema_name}",
+                &child_type.module_name
+            )
+        };
+        let child_variant_type: Type = parse_str(&child_variant_type_raw).unwrap();
 
         let child_variant_name_ident = child.as_last_name_ident();
-
-        let child_variant_type: Type = if child_namespace.prefix == schema_namespace.prefix {
-            parse_str(&child_type.class_name.to_upper_camel_case()).unwrap()
-        } else {
-            parse_str(&format!(
-                "crate::schemas::{}::{}",
-                &child_type.module_name,
-                child_type.class_name.to_upper_camel_case()
-            ))
-            .unwrap()
-        };
 
         variants.push(quote! {
           #child_variant_name_ident(std::boxed::Box<#child_variant_type>),
@@ -393,27 +393,22 @@ fn gen_one_sequence_fields(
 
     for particle in &schema_type.particle.items {
         let child = get_or_panic!(child_map, particle.name.as_str());
-        let child_type = get_or_panic!(gen_context.type_name_type_map, particle.name.as_str());
+        let child_type = get_or_panic!(gen_context.type_name_type_map, child.name.as_str());
         let child_namespace =
             get_or_panic!(gen_context.type_name_namespace_map, child.name.as_str());
+        let child_schema_name = child_type.class_name.to_upper_camel_case();
 
-        let child_variant_type: Type = if child_namespace.prefix == schema_namespace.prefix {
-            parse_str(&child_type.class_name.to_upper_camel_case()).unwrap()
+        let child_variant_type_raw = if child_namespace.prefix == schema_namespace.prefix {
+            child_schema_name
         } else {
-            parse_str(&format!(
-                "crate::schemas::{}::{}",
-                &child_type.module_name,
-                child_type.class_name.to_upper_camel_case()
-            ))
-            .unwrap()
+            format!(
+                "crate::schemas::{}::{child_schema_name}",
+                &child_type.module_name
+            )
         };
+        let child_variant_type: Type = parse_str(&child_variant_type_raw).unwrap();
 
-        let child_name_ident_raw = child
-            .name
-            .split_once('/')
-            .map(|(_, name)| name)
-            .unwrap_or(&child.property_name);
-        let child_name_ident: Ident = parse_str(&escape_snake_case(child_name_ident_raw)).unwrap();
+        let child_property_name_ident = child.as_property_name_ident();
 
         let property_comments = if child.property_comments.is_empty() {
             " _"
@@ -424,17 +419,17 @@ fn gen_one_sequence_fields(
         if particle.occurs.is_empty() {
             fields.push(quote! {
               #[doc = #property_comments]
-              pub #child_name_ident: std::boxed::Box<#child_variant_type>,
+              pub #child_property_name_ident: Box<#child_variant_type>,
             });
         } else if particle.occurs[0].min == 0 && particle.occurs[0].max == 1 {
             fields.push(quote! {
               #[doc = #property_comments]
-              pub #child_name_ident: Option<std::boxed::Box<#child_variant_type>>,
+              pub #child_property_name_ident: Option<Box<#child_variant_type>>,
             });
         } else {
             fields.push(quote! {
               #[doc = #property_comments]
-              pub #child_name_ident: Vec<#child_variant_type>,
+              pub #child_property_name_ident: Vec<#child_variant_type>,
             });
         }
     }
