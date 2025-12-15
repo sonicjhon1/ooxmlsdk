@@ -334,7 +334,7 @@ fn gen_children(
         let child_variant_name_ident = child.as_last_name_ident();
 
         variants.push(quote! {
-          #child_variant_name_ident(Box<#child_variant_type>),
+          #child_variant_name_ident(std::boxed::Box<#child_variant_type>),
         });
     }
 
@@ -419,12 +419,12 @@ fn gen_one_sequence_fields(
         if particle.occurs.is_empty() {
             fields.push(quote! {
               #[doc = #property_comments]
-              pub #child_property_name_ident: Box<#child_variant_type>,
+              pub #child_property_name_ident: std::boxed::Box<#child_variant_type>,
             });
         } else if particle.occurs[0].min == 0 && particle.occurs[0].max == 1 {
             fields.push(quote! {
               #[doc = #property_comments]
-              pub #child_property_name_ident: Option<Box<#child_variant_type>>,
+              pub #child_property_name_ident: Option<std::boxed::Box<#child_variant_type>>,
             });
         } else {
             fields.push(quote! {

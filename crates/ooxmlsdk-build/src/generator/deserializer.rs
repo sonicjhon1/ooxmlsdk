@@ -663,7 +663,7 @@ fn gen_one_sequence_match_arm(
         {
             parse2(quote! {
               #child_last_name_literal | #child_suffix_last_name_literal => {
-                #child_property_name_ident = Some(Box::new(
+                #child_property_name_ident = Some(std::boxed::Box::new(
                   #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                 ));
               }
@@ -684,7 +684,7 @@ fn gen_one_sequence_match_arm(
     {
         parse2(quote! {
           #child_last_name_literal => {
-            #child_property_name_ident = Some(Box::new(
+            #child_property_name_ident = Some(std::boxed::Box::new(
               #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
             ));
           }
@@ -731,7 +731,7 @@ fn gen_child_match_arm(
     if loop_children_suffix_match_set.insert(child_suffix_last_name.to_string()) {
         return parse2(quote! {
           #child_last_name_literal | #child_suffix_last_name_literal => {
-            children.push(#child_choice_enum_ident::#child_variant_name_ident(Box::new(
+            children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
               #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
             )));
           }
@@ -741,7 +741,7 @@ fn gen_child_match_arm(
 
     return parse2(quote! {
       #child_last_name_literal => {
-        children.push(#child_choice_enum_ident::#child_variant_name_ident(Box::new(
+        children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
           #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
         )));
       }

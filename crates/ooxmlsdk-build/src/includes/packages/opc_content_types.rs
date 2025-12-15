@@ -99,12 +99,12 @@ impl Types {
                 if let Some(e) = e_opt {
                     match e.name().as_ref() {
                         b"w:Default" | b"Default" => {
-                            children.push(TypesChildChoice::Default(Box::new(
+                            children.push(TypesChildChoice::Default(std::boxed::Box::new(
                                 Default::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                             )));
                         }
                         b"w:Override" | b"Override" => {
-                            children.push(TypesChildChoice::Override(Box::new(
+                            children.push(TypesChildChoice::Override(std::boxed::Box::new(
                                 Override::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                             )));
                         }

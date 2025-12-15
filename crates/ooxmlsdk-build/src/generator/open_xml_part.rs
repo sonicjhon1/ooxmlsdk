@@ -94,11 +94,11 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
             });
         } else if child.min_occurs_is_non_zero {
             fields.push(quote! {
-              pub #child_name_ident: Box<#child_type>,
+              pub #child_name_ident: std::boxed::Box<#child_type>,
             });
         } else {
             fields.push(quote! {
-              pub #child_name_ident: Option<Box<#child_type>>,
+              pub #child_name_ident: Option<std::boxed::Box<#child_type>>,
             });
         }
     }
@@ -407,7 +407,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         } else {
             field_declaration_list.push(
                 parse2(quote! {
-                  let mut #child_api_name_ident: Option<Box<#child_type>> = None;
+                  let mut #child_api_name_ident: Option<std::boxed::Box<#child_type>> = None;
                 })
                 .unwrap(),
             );
@@ -419,7 +419,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
                       &format!("{}{}", child_parent_path, relationship.target),
                     );
 
-                    #child_api_name_ident = Some(Box::new(#child_type::new_from_archive(
+                    #child_api_name_ident = Some(std::boxed::Box::new(#child_type::new_from_archive(
                       &child_parent_path,
                       &target_path,
                       &relationship.id,
