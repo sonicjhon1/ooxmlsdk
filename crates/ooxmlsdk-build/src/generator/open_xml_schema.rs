@@ -6,10 +6,10 @@ use syn::{Ident, ItemEnum, Type, Variant, parse_str, parse2};
 use crate::{
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaType,
-        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
+        OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
+        OpenXmlSchemaTypeChild,
     },
-    utils::{escape_upper_camel_case, get_or_panic},
+    utils::get_or_panic,
 };
 
 pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
@@ -25,11 +25,8 @@ pub fn gen_open_xml_schemas(schema: &OpenXmlSchema, gen_context: &GenContext) ->
 
         let mut variants: Vec<Variant> = vec![];
 
-        for (i, OpenXmlSchemaEnumFacet { name, value, .. }) in schema_enum.facets.iter().enumerate()
-        {
-            let variant_ident_raw = if name.is_empty() { value } else { name };
-            let variant_ident: Ident =
-                parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
+        for (i, schema_enum_facet) in schema_enum.facets.iter().enumerate() {
+            let variant_ident = schema_enum_facet.as_variant_ident();
 
             if i == 0 {
                 variants.push(

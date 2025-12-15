@@ -1,4 +1,4 @@
-use crate::utils::escape_snake_case;
+use crate::utils::{escape_snake_case, escape_upper_camel_case};
 use heck::ToUpperCamelCase;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -241,6 +241,22 @@ pub struct OpenXmlSchemaEnumFacet {
     pub name: String,
     pub value: String,
     pub version: String,
+}
+
+impl OpenXmlSchemaEnumFacet {
+    #[inline(always)]
+    pub fn as_variant(&self) -> &str {
+        return if self.name.is_empty() {
+            &self.value
+        } else {
+            &self.name
+        };
+    }
+
+    #[inline(always)]
+    pub fn as_variant_ident(&self) -> Ident {
+        return parse_str(&escape_upper_camel_case(self.as_variant())).unwrap();
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

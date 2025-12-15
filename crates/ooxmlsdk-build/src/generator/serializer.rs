@@ -6,10 +6,8 @@ use syn::{Arm, Ident, ItemFn, ItemImpl, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
-    models::{
-        OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
-    },
-    utils::{escape_snake_case, escape_upper_camel_case, get_or_panic},
+    models::{OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
+    utils::{escape_snake_case, get_or_panic},
 };
 
 pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
@@ -21,24 +19,23 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
         .ok_or(format!("{:?}", schema.target_namespace))
         .unwrap();
 
-    for e in &schema.enums {
+    for schema_enum in &schema.enums {
         let enum_type: Type = parse_str(&format!(
             "crate::schemas::{}::{}",
             &schema.module_name,
-            e.name.to_upper_camel_case()
+            schema_enum.name.to_upper_camel_case()
         ))
         .unwrap();
 
         let mut variants: Vec<Arm> = vec![];
 
-        for OpenXmlSchemaEnumFacet { name, value, .. } in &e.facets {
-            let variant_ident_raw = if name.is_empty() { value } else { name };
-            let variant_ident: Ident =
-                parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
+        for schema_enum_facet in &schema_enum.facets {
+            let variant_ident = schema_enum_facet.as_variant_ident();
+            let variant_value = &schema_enum_facet.value;
 
             variants.push(
                 parse2(quote! {
-                  Self::#variant_ident => #value.to_string(),
+                  Self::#variant_ident => #variant_value.to_string(),
                 })
                 .unwrap(),
             );

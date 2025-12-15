@@ -7,10 +7,10 @@ use syn::{Arm, Ident, ItemFn, ItemImpl, LitByteStr, Stmt, Type, parse_str, parse
 use crate::{
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        OpenXmlSchema, OpenXmlSchemaEnumFacet, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
+        OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
         OpenXmlSchemaTypeParticle,
     },
-    utils::{escape_upper_camel_case, get_or_panic},
+    utils::get_or_panic,
 };
 
 pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
@@ -21,27 +21,27 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         schema.target_namespace.as_str()
     );
 
-    for e in &schema.enums {
+    for schema_enum in &schema.enums {
         let enum_type: Type = parse_str(&format!(
             "crate::schemas::{}::{}",
             &schema.module_name,
-            e.name.to_upper_camel_case()
+            schema_enum.name.to_upper_camel_case()
         ))
         .unwrap();
 
         let mut variants: Vec<Arm> = vec![];
         let mut byte_variants: Vec<Arm> = vec![];
 
-        for OpenXmlSchemaEnumFacet { name, value, .. } in &e.facets {
-            let variant_ident_raw = if name.is_empty() { value } else { name };
-            let variant_ident: Ident =
-                parse_str(&escape_upper_camel_case(variant_ident_raw)).unwrap();
+        for schema_enum_facet in &schema_enum.facets {
+            let variant_ident = schema_enum_facet.as_variant_ident();
+            let variant_value = &schema_enum_facet.value;
 
-            let variant_value_literal: LitByteStr = parse_str(&format!("b\"{value}\"")).unwrap();
+            let variant_value_literal: LitByteStr =
+                parse_str(&format!("b\"{variant_value}\"")).unwrap();
 
             variants.push(
                 parse2(quote! {
-                  #value => Ok(Self::#variant_ident),
+                  #variant_value => Ok(Self::#variant_ident),
                 })
                 .unwrap(),
             );
