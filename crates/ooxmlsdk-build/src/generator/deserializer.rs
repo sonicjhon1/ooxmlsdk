@@ -842,7 +842,7 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
 
     quote! {
       #attr_name_literal => {
-        #attr_name_ident = Some(#e_type::from_bytes(&value)?);
+        #attr_name_ident = Some(#e_type::from_bytes(&attr.value)?);
       }
     }
   } else {
@@ -855,7 +855,7 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
       },
       "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
         #attr_name_literal => {
-          #attr_name_ident = Some(crate::common::parse_bool_bytes(&value)?);
+          #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
         }
       },
       "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
