@@ -551,14 +551,14 @@ fn gen_attr(schema: &OpenXmlSchemaTypeAttribute) -> TokenStream {
     if schema.is_validator_required() {
         quote! {
           writer.write_str(#attr_name_str_fmt)?;
-          writer.write_str(&quick_xml::escape::escape(self.#attr_value_ident))?;
+          writer.write_str(&quick_xml::escape::escape(self.#attr_value_ident.to_string()))?;
           writer.write_char('"')?;
         }
     } else {
         quote! {
           if let Some(#attr_value_ident) = &self.#attr_value_ident {
             writer.write_str(#attr_name_str_fmt)?;
-            writer.write_str(&quick_xml::escape::escape(#attr_value_ident))?;
+            writer.write_str(&quick_xml::escape::escape(#attr_value_ident.to_string()))?;
             writer.write_char('"')?;
           }
         }
