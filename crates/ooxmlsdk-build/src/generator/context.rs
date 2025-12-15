@@ -9,7 +9,7 @@ use std::{
 use crate::{
     models::{
         OpenXmlNamespace, OpenXmlPart, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
-        OpenXmlSchemaTypeParticle, TypedNamespace, TypedSchema,
+        TypedNamespace, TypedSchema,
     },
     utils::get_or_panic,
 };
@@ -232,7 +232,7 @@ impl<'a> GenContext<'a> {
                     check_office_version(child_type_version)
                 });
 
-                check_particle_version(&mut ty.particle);
+                ty.particle.check_particle_version();
             }
 
             schema
@@ -254,18 +254,6 @@ impl<'a> GenContext<'a> {
             typed_schemas,
             typed_namespaces,
             ..Default::default()
-        }
-    }
-}
-
-pub(crate) fn check_particle_version(particle: &mut OpenXmlSchemaTypeParticle) {
-    particle
-        .items
-        .retain(|x| check_office_version(&x.initial_version));
-
-    for item in particle.items.iter_mut() {
-        if !item.kind.is_empty() {
-            check_particle_version(item);
         }
     }
 }

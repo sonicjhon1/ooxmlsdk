@@ -1,4 +1,7 @@
-use crate::utils::{escape_snake_case, escape_upper_camel_case};
+use crate::{
+    generator::context::check_office_version,
+    utils::{escape_snake_case, escape_upper_camel_case},
+};
 use heck::ToUpperCamelCase;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -213,6 +216,19 @@ pub struct OpenXmlSchemaTypeParticle {
     pub initial_version: String,
     pub require_filter: bool,
     pub namespace: String,
+}
+
+impl OpenXmlSchemaTypeParticle {
+    pub fn check_particle_version(&mut self) {
+        self.items
+            .retain(|x| check_office_version(&x.initial_version));
+
+        for item in self.items.iter_mut() {
+            if !item.kind.is_empty() {
+                item.check_particle_version();
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
