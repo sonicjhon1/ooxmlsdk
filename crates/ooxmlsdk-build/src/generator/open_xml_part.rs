@@ -419,7 +419,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
                       &format!("{}{}", child_parent_path, relationship.target),
                     );
 
-                    #child_api_name_ident = Some(std::boxed::Box::new(#child_type::new_from_archive(
+                    #child_api_name_ident = Some(Box::new(#child_type::new_from_archive(
                       &child_parent_path,
                       &target_path,
                       &relationship.id,
