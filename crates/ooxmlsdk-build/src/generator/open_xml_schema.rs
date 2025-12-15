@@ -224,7 +224,7 @@ fn gen_attr(
     let type_ident: Type = if schema.r#type.starts_with("ListValue<") {
         parse_str("String").unwrap()
     } else if schema.r#type.starts_with("EnumValue<") {
-        let (enum_typed_namespace_str, enum_name) = schema.split_type_trimmed();
+        let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
 
         let mut enum_prefix = "";
         for typed_namespace in &gen_context.typed_namespaces {

@@ -127,10 +127,15 @@ impl OpenXmlSchemaTypeAttribute {
 
     pub fn as_name_str(&self) -> &str { return self.q_name.trim_prefix(":"); }
 
-    pub fn split_type_trimmed(&self) -> (&str, &str) {
+    pub fn split_type_enum_value_trimmed(&self) -> (&str, &str) {
         self.r#type
             .rsplit_once('.')
-            .map(|(f, l)| (&f[1..f.len()], &l[0..l.len() - 1]))
+            .map(|(f, l)| {
+                (
+                    f.strip_prefix("EnumValue<").unwrap(),
+                    l.strip_suffix('>').unwrap(),
+                )
+            })
             .unwrap()
     }
 
