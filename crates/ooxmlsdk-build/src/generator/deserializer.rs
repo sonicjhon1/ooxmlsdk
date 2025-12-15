@@ -94,23 +94,21 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             continue;
         }
 
-        let class_name_str = schema_type.class_name.to_upper_camel_case();
+        let schema_class_name_formatted = schema_type.class_name.to_upper_camel_case();
 
         let struct_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            &schema.module_name, &class_name_str
+            "crate::schemas::{}::{schema_class_name_formatted}",
+            &schema.module_name
         ))
         .unwrap();
 
-        let from_str_impl = gen_from_str_impl(&struct_type);
+        token_stream_list.push(gen_from_str_impl(&struct_type));
 
-        token_stream_list.push(from_str_impl);
-
-        let (type_first_name, type_last_name) = schema_type.split_name();
+        let (type_base_class, type_prefixed_name) = schema_type.split_name();
         let (_, type_name_str) = schema_type.split_last_name();
 
-        let prefixed_type_name_literal: LitByteStr =
-            parse_str(&format!("b\"{type_last_name}\"")).unwrap();
+        let type_prefixed_name_literal: LitByteStr =
+            parse_str(&format!("b\"{type_prefixed_name}\"")).unwrap();
         let type_name_literal: LitByteStr = parse_str(&format!("b\"{type_name_str}\"")).unwrap();
 
         let mut field_declaration_list: Vec<Stmt> = vec![];
@@ -147,7 +145,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 .unwrap(),
             );
 
-            loop_match_arm_list.push(gen_simple_child_match_arm(type_first_name, gen_context));
+            loop_match_arm_list.push(gen_simple_child_match_arm(type_base_class, gen_context));
         } else if schema_type.base_class == "OpenXmlLeafElement" {
             for attr in &schema_type.attributes {
                 attributes.push(attr);
@@ -195,9 +193,8 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             }
 
             let child_choice_enum_type: Type = parse_str(&format!(
-                "crate::schemas::{}::{}ChildChoice",
+                "crate::schemas::{}::{schema_class_name_formatted}ChildChoice",
                 &schema.module_name,
-                schema_type.class_name.to_upper_camel_case()
             ))
             .unwrap();
 
@@ -279,7 +276,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         } else if schema_type.is_derived {
             let base_class_type = get_or_panic!(
                 gen_context.type_name_type_map,
-                &schema_type.name[0..schema_type.name.find('/').unwrap() + 1]
+                format!("{type_base_class}/").as_str()
             );
 
             for attr in &schema_type.attributes {
@@ -363,9 +360,8 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             }
 
             let child_choice_enum_type: Type = parse_str(&format!(
-                "crate::schemas::{}::{}ChildChoice",
+                "crate::schemas::{}::{schema_class_name_formatted}ChildChoice",
                 &schema.module_name,
-                schema_type.class_name.to_upper_camel_case()
             ))
             .unwrap();
 
@@ -396,8 +392,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             if schema_type.children.is_empty()
                 && base_class_type.base_class == "OpenXmlLeafTextElement"
             {
-                let base_first_name =
-                    &base_class_type.name[0..base_class_type.name.find('/').unwrap()];
+                let base_first_name = base_class_type.split_name().0;
 
                 loop_match_arm_list.push(gen_simple_child_match_arm(base_first_name, gen_context));
             }
@@ -433,7 +428,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
 
         let mut expect_event_start_stmt: Stmt = parse2(quote! {
             let (e, empty_tag) =
-                crate::common::expect_event_start(xml_reader, xml_event, #prefixed_type_name_literal, #type_name_literal)?;
+                crate::common::expect_event_start(xml_reader, xml_event, #type_prefixed_name_literal, #type_name_literal)?;
         }).unwrap();
 
         let attr_match_stmt_opt: Option<Stmt> = if (schema_type.base_class
@@ -491,7 +486,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         } else {
             expect_event_start_stmt = parse2(quote! {
               let (_, empty_tag) =
-                crate::common::expect_event_start(xml_reader, xml_event, #prefixed_type_name_literal, #type_name_literal)?;
+                crate::common::expect_event_start(xml_reader, xml_event, #type_prefixed_name_literal, #type_name_literal)?;
             }).unwrap();
 
             None
@@ -537,7 +532,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                     match e.name().as_ref() {
                       #( #loop_children_match_list )*
                       _ => Err(super::super::common::SdkError::CommonError(
-                        #class_name_str.to_string(),
+                        #schema_class_name_formatted.to_string(),
                       ))?,
                     }
                   }
@@ -564,7 +559,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 match xml_reader.next()? {
                   #( #loop_match_arm_list )*
                   quick_xml::events::Event::End(e) => match e.name().as_ref() {
-                    #prefixed_type_name_literal | #type_name_literal => {
+                    #type_prefixed_name_literal | #type_name_literal => {
                       break;
                     }
                     _ => (),
@@ -604,7 +599,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
 }
 
 fn gen_from_str_impl(struct_type: &Type) -> ItemImpl {
-    let token_stream = quote! {
+    return parse2(quote! {
       impl std::str::FromStr for #struct_type {
         type Err = crate::common::SdkError;
 
@@ -614,21 +609,18 @@ fn gen_from_str_impl(struct_type: &Type) -> ItemImpl {
           Self::deserialize_inner(&mut xml_reader, None)
         }
       }
-    };
-
-    parse_str(&token_stream.to_string()).unwrap()
+    })
+    .unwrap();
 }
 
 fn gen_from_reader_fn() -> ItemFn {
-    let token_stream = quote! {
+    return parse2(quote! {
         pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, crate::common::SdkError> {
             let mut xml_reader = crate::common::from_reader_inner(reader)?;
 
             Self::deserialize_inner(&mut xml_reader, None)
         }
-    };
-
-    parse_str(&token_stream.to_string()).unwrap()
+    }).unwrap();
 }
 
 fn gen_one_sequence_match_arm(
@@ -801,80 +793,78 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
     let attr_name_literal: LitByteStr = parse_str(&format!("b\"{attr_name_str}\"")).unwrap();
 
     parse2(if schema.r#type.starts_with("ListValue<") {
-    quote! {
-      #attr_name_literal => {
-        #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
-      }
-    }
-  } else if schema.r#type.starts_with("EnumValue<") {
-    let e_typed_namespace_str =
-      &schema.r#type[schema.r#type.find("<").unwrap() + 1..schema.r#type.rfind(".").unwrap()];
-
-    let enum_name = &schema.r#type[schema.r#type.rfind(".").unwrap() + 1..schema.r#type.len() - 1];
-
-    let mut e_prefix = "";
-
-    for typed_namespace in &gen_context.typed_namespaces {
-      if e_typed_namespace_str == typed_namespace.namespace {
-        let e_schema = get_or_panic!(
-          gen_context.prefix_schema_map,
-          typed_namespace.prefix.as_str()
-        );
-
-        for e in &e_schema.enums {
-          if e.name == enum_name {
-            e_prefix = &typed_namespace.prefix;
-          }
+        quote! {
+            #attr_name_literal => {
+                #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+            }
         }
-      }
-    }
+    } else if schema.r#type.starts_with("EnumValue<") {
+        let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
+        let enum_name_formatted = enum_name.to_upper_camel_case();
 
-    let e_namespace = get_or_panic!(gen_context.prefix_namespace_map, e_prefix);
+        let enum_prefix = gen_context
+            .typed_namespaces
+            .iter()
+            .find_map(|typed_namespace| {
+                if typed_namespace.namespace != enum_typed_namespace_str {
+                    return None;
+                };
 
-    let e_schema = get_or_panic!(gen_context.prefix_schema_map, e_namespace.prefix.as_str());
+                return gen_context
+                    .prefix_schema_map
+                    .get(typed_namespace.prefix.as_str())?
+                    .enums
+                    .iter()
+                    .any(|schema_enum| schema_enum.name == enum_name)
+                    .then_some(typed_namespace.prefix.as_str());
+            })
+            .unwrap();
 
-    let e_type: Type = parse_str(&format!(
-      "crate::schemas::{}::{}",
-      e_schema.module_name,
-      enum_name.to_upper_camel_case()
-    ))
-    .unwrap();
+        let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
 
-    quote! {
-      #attr_name_literal => {
-        #attr_name_ident = Some(#e_type::from_bytes(&attr.value)?);
-      }
-    }
-  } else {
-    match schema.r#type.as_str() {
-      "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
-      | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
-        #attr_name_literal => {
-          #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
-        }
-      },
-      "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
-        #attr_name_literal => {
-          #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
-        }
-      },
-      "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
-      | "UInt64Value" | "DoubleValue" | "SingleValue" => {
-        let e_type: Type =
-          parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).unwrap();
+        let enum_schema = get_or_panic!(gen_context.prefix_schema_map, enum_namespace.prefix.as_str());
+
+        let enum_type: Type = parse_str(&format!(
+            "crate::schemas::{}::{enum_name_formatted}",
+            enum_schema.module_name,
+        ))
+        .unwrap();
 
         quote! {
           #attr_name_literal => {
-            #attr_name_ident = Some(
-              attr
-                .decode_and_unescape_value(xml_reader.decoder())?
-                .parse::<#e_type>()?,
-            );
+            #attr_name_ident = Some(#enum_type::from_bytes(&attr.value)?);
           }
         }
-      }
-      _ => panic!("{}", schema.r#type),
-    }
-  })
-  .unwrap()
+    } else {
+        match schema.r#type.as_str() {
+          "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
+          | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
+            #attr_name_literal => {
+              #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+            }
+          },
+          "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
+            #attr_name_literal => {
+              #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
+            }
+          },
+          "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
+          | "UInt64Value" | "DoubleValue" | "SingleValue" => {
+            let enum_type: Type =
+              parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).unwrap();
+
+            quote! {
+              #attr_name_literal => {
+                #attr_name_ident = Some(
+                  attr
+                    .decode_and_unescape_value(xml_reader.decoder())?
+                    .parse::<#enum_type>()?,
+                );
+              }
+            }
+          }
+          _ => panic!("{}", schema.r#type),
+        }
+    })
+    .unwrap()
 }
