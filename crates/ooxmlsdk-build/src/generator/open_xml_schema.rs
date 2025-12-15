@@ -221,10 +221,11 @@ fn gen_attr(
 ) -> TokenStream {
     let attr_name_ident = schema.as_name_ident();
 
-    let type_ident: Type = if schema.r#type.starts_with("ListValue<") {
-        parse_str("String").unwrap()
+    let type_ident_raw = if schema.r#type.starts_with("ListValue<") {
+        "String".to_string()
     } else if schema.r#type.starts_with("EnumValue<") {
         let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
+        let enum_name = enum_name.to_upper_camel_case();
 
         let enum_prefix = gen_context
             .typed_namespaces
@@ -247,23 +248,19 @@ fn gen_attr(
         let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
 
         if enum_namespace.prefix == schema_namespace.prefix {
-            parse_str(&enum_name.to_upper_camel_case()).unwrap()
+            enum_name
         } else {
             let enum_schema = get_or_panic!(
                 gen_context.prefix_schema_map,
                 enum_namespace.prefix.as_str()
             );
 
-            parse_str(&format!(
-                "crate::schemas::{}::{}",
-                enum_schema.module_name,
-                enum_name.to_upper_camel_case()
-            ))
-            .unwrap()
+            format!("crate::schemas::{}::{enum_name}", enum_schema.module_name)
         }
     } else {
-        parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).unwrap()
+        format!("crate::schemas::simple_type::{}", &schema.r#type)
     };
+    let type_ident: Type = parse_str(&type_ident_raw).unwrap();
 
     let property_comments_doc = &schema.property_comments;
 
