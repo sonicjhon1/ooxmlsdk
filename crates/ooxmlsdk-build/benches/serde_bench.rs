@@ -19,8 +19,8 @@ pub struct Types {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub enum TypesChildChoice {
-    Default(std::boxed::Box<Default>),
-    Override(std::boxed::Box<Override>),
+    Default(Box<Default>),
+    Override(Box<Override>),
 }
 
 #[derive(Clone, Deserialize, Serialize)]

@@ -10,8 +10,8 @@ pub struct Types {
 
 #[derive(Clone, Debug, Default)]
 pub enum TypesChildChoice {
-    Default(std::boxed::Box<Default>),
-    Override(std::boxed::Box<Override>),
+    Default(Box<Default>),
+    Override(Box<Override>),
     #[default]
     None,
 }

@@ -337,7 +337,7 @@ fn gen_children(
         let child_variant_name_ident = child.as_last_name_ident();
 
         variants.push(quote! {
-          #child_variant_name_ident(std::boxed::Box<#child_variant_type>),
+          #child_variant_name_ident(Box<#child_variant_type>),
         });
     }
 
