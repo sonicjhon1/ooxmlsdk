@@ -130,7 +130,7 @@ impl OpenXmlSchemaTypeAttribute {
     pub fn split_type_trimmed(&self) -> (&str, &str) {
         self.r#type
             .rsplit_once('.')
-            .map(|(f, l)| (f.trim_start_matches('<'), l.trim_end_matches('>')))
+            .map(|(f, l)| (&f[1..f.len()], &l[0..l.len() - 1]))
             .unwrap()
     }
 
@@ -186,7 +186,7 @@ impl OpenXmlSchemaTypeChild {
     #[inline(always)]
     pub fn as_property_name_str(&self) -> &str {
         return if self.property_name.is_empty() {
-            self.split_name().1
+            self.split_last_name().1
         } else {
             self.property_name.as_str()
         };
