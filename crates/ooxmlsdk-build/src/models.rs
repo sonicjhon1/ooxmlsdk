@@ -127,6 +127,13 @@ impl OpenXmlSchemaTypeAttribute {
 
     pub fn as_name_str(&self) -> &str { return self.q_name.trim_prefix(":"); }
 
+    pub fn split_type_trimmed(&self) -> (&str, &str) {
+        self.r#type
+            .rsplit_once('.')
+            .map(|(f, l)| (f.trim_start_matches('<'), l.trim_end_matches('>')))
+            .unwrap()
+    }
+
     pub fn is_validator_required(&self) -> bool {
         return self
             .validators

@@ -223,16 +223,11 @@ fn gen_attr(
     let type_ident: Type = if schema.r#type.starts_with("ListValue<") {
         parse_str("String").unwrap()
     } else if schema.r#type.starts_with("EnumValue<") {
-        let e_typed_namespace_str =
-            &schema.r#type[schema.r#type.find("<").unwrap() + 1..schema.r#type.rfind(".").unwrap()];
-
-        let enum_name =
-            &schema.r#type[schema.r#type.rfind(".").unwrap() + 1..schema.r#type.len() - 1];
+        let (enum_typed_namespace_str, enum_name) = schema.split_type_trimmed();
 
         let mut e_prefix = "";
-
         for typed_namespace in &gen_context.typed_namespaces {
-            if e_typed_namespace_str == typed_namespace.namespace {
+            if enum_typed_namespace_str == typed_namespace.namespace {
                 let e_schema = get_or_panic!(
                     gen_context.prefix_schema_map,
                     typed_namespace.prefix.as_str()
