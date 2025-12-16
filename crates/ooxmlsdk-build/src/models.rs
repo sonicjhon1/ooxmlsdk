@@ -211,7 +211,7 @@ impl OpenXmlSchemaTypeChild {
     #[inline(always)]
     pub fn as_property_name_str(&self) -> &str {
         return if self.property_name.is_empty() {
-            self.split_last_name().1
+            self.split_name().1
         } else {
             self.property_name.as_str()
         };
