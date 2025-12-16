@@ -8,6 +8,7 @@ use std::{
     num::{ParseFloatError, ParseIntError},
 };
 use thiserror::Error;
+use tracing::*;
 
 #[derive(Error, Debug)]
 pub enum SdkError {
@@ -139,10 +140,10 @@ pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
 pub(crate) fn expect_event_start<'de>(
     xml_reader: &mut impl XmlReader<'de>,
     xml_event: Option<(BytesStart<'de>, bool)>,
-    tag_prefix: &[u8],
+    tag_prefixed: &[u8],
     tag: &[u8],
 ) -> Result<(BytesStart<'de>, bool), SdkError> {
-    tracing::debug!("xml_event: {:?}", xml_event);
+    debug!("xml_event: {:?}", xml_event);
 
     if let Some((event, empty_tag)) = xml_event {
         return Ok((event, empty_tag));
@@ -150,7 +151,7 @@ pub(crate) fn expect_event_start<'de>(
 
     let (event, empty_tag) = loop {
         let event = xml_reader.next()?;
-        tracing::debug!("event: {event:?}");
+        debug!("event: {event:?}");
 
         match event {
             Event::Start(b) => break (b, false),
@@ -162,13 +163,19 @@ pub(crate) fn expect_event_start<'de>(
         }
     };
 
-    tracing::debug!("({event:?}, {empty_tag})");
+    debug!("({event:?}, {empty_tag})");
 
     let event_name = event.name().0;
-    if event_name != tag_prefix || event_name != tag {
+    if event_name != tag_prefixed || event_name != tag {
+        let expected_tag_prefixed = String::from_utf8_lossy(tag_prefixed).to_string();
+        let expected_tag = String::from_utf8_lossy(tag).to_string();
+        let found_event_name = String::from_utf8_lossy(event_name).to_string();
+        warn!(
+            "Mismatch: [{found_event_name}] does not match [{expected_tag_prefixed}] OR [{expected_tag}]"
+        );
         return Err(SdkError::MismatchError {
-            expected: String::from_utf8_lossy(tag).to_string(),
-            found: String::from_utf8_lossy(event.name().as_ref()).to_string(),
+            expected: format!("{expected_tag_prefixed} OR {expected_tag}"),
+            found: found_event_name,
         });
     }
 
