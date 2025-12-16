@@ -166,7 +166,7 @@ pub(crate) fn expect_event_start<'de>(
     debug!("({event:?}, {empty_tag})");
 
     let event_name = event.name().0;
-    if event_name != tag_prefixed || event_name != tag {
+    if !(event_name == tag_prefixed || event_name == tag) {
         let expected_tag_prefixed = String::from_utf8_lossy(tag_prefixed).to_string();
         let expected_tag = String::from_utf8_lossy(tag).to_string();
         let found_event_name = String::from_utf8_lossy(event_name).to_string();
