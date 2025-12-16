@@ -3,9 +3,12 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Arm, FieldValue, Ident, ItemFn, ItemImpl, ItemStruct, Stmt, Type, parse_str, parse2};
 
-use crate::{GenContext, models::OpenXmlPart, utils::get_or_panic};
+use crate::{GenContext, error::BuildErrorReport, models::OpenXmlPart, utils::HashMapOpsError};
 
-pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> TokenStream {
+pub fn gen_open_xml_parts(
+    part: &OpenXmlPart,
+    gen_context: &GenContext,
+) -> Result<TokenStream, BuildErrorReport> {
     let relationship_type_str = &part.relationship_type;
 
     let relationship_type_stmt: Stmt = parse2(quote! {
@@ -59,8 +62,9 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
     } else if let Some(root_element_type_name) =
         gen_context.part_name_type_name_map.get(part.name.as_str())
     {
-        let root_element_type =
-            get_or_panic!(gen_context.type_name_type_map, root_element_type_name);
+        let root_element_type = gen_context
+            .type_name_type_map
+            .try_get(root_element_type_name)?;
 
         let field_type: Type = parse_str(&format!(
             "crate::schemas::{}::{}",
@@ -128,7 +132,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         field_declaration_list.push(
             parse2(quote! {
               let content_types = crate::schemas::opc_content_types::Types::from_reader(
-                std::io::BufReader::new(archive.by_name("[Content_Types].xml")?,
+                std::io::BufReader::new(archive.by_name("[Content_Types].xml").map_err(crate::common::SdkError::from)?,
               ))?;
             })
             .unwrap(),
@@ -193,9 +197,8 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
                     rels_path = file_path.to_string();
 
                     Some(crate::schemas::opc_relationships::Relationships::from_reader(
-                            std::io::BufReader::new(archive.by_name(file_path)?,
-                        ))?,
-                    )
+                        std::io::BufReader::new(archive.by_name(file_path).map_err(crate::common::SdkError::from)?)
+                    )?)
                 } else {
                   None
                 };
@@ -242,11 +245,10 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
 
         field_declaration_list.push(
             parse2(quote! {
-              {
-                  let mut file = std::io::BufReader::new(archive.by_name(path)?);
-
-                  file.read_to_string(&mut part_content)?;
-              }
+                {
+                    let mut file = std::io::BufReader::new(archive.by_name(path).map_err(crate::common::SdkError::from)?);
+                    file.read_to_string(&mut part_content).map_err(crate::common::SdkError::from)?;
+                }
             })
             .unwrap(),
         );
@@ -278,11 +280,11 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         field_declaration_list.push(
             parse2(quote! {
                 {
-                    let mut zip_entry = archive.by_name(path)?;
+                    let mut zip_entry = archive.by_name(path).map_err(crate::common::SdkError::from)?;
 
                     part_content = Vec::with_capacity(zip_entry.size() as usize);
 
-                    zip_entry.read_to_end(&mut part_content)?;
+                    zip_entry.read_to_end(&mut part_content).map_err(crate::common::SdkError::from)?;
                 }
             })
             .unwrap(),
@@ -296,18 +298,20 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         );
     } else if part.name == "CoreFilePropertiesPart" {
         field_declaration_list.push(parse2(quote! {
-              let root_element = Some(
-                  crate::schemas::opc_core_properties::CoreProperties::from_reader(std::io::BufReader::new(archive.by_name(path)?))?,
-              );
-          }).unwrap());
+            let root_element = Some(
+                    crate::schemas::opc_core_properties::CoreProperties::from_reader(
+                        std::io::BufReader::new(archive.by_name(path).map_err(crate::common::SdkError::from)?)
+                    )?,
+            );
+        }).unwrap());
 
         field_unwrap_list.push(
-              parse2(quote! {
-                  let root_element = root_element
-                      .ok_or_else(|| crate::common::SdkError::CommonError("root_element".to_string()))?;
-              })
-              .unwrap(),
-          );
+            parse2(quote! {
+                let root_element = root_element
+                    .ok_or_else(|| crate::common::SdkError::CommonError("root_element".to_string()))?;
+            })
+            .unwrap(),
+        );
 
         self_field_value_list.push(
             parse2(quote! {
@@ -318,8 +322,9 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
     } else if let Some(root_element_type_name) =
         gen_context.part_name_type_name_map.get(part.name.as_str())
     {
-        let root_element_type =
-            get_or_panic!(gen_context.type_name_type_map, root_element_type_name);
+        let root_element_type = gen_context
+            .type_name_type_map
+            .try_get(root_element_type_name)?;
 
         let field_type: Type = parse_str(&format!(
             "crate::schemas::{}::{}",
@@ -329,7 +334,9 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         .unwrap();
 
         field_declaration_list.push(parse2(quote! {
-            let root_element = Some(#field_type::from_reader(std::io::BufReader::new(archive.by_name(path)?))?);
+            let root_element = Some(#field_type::from_reader(
+                std::io::BufReader::new(archive.by_name(path).map_err(crate::common::SdkError::from)?)
+            )?);
         }).unwrap());
 
         field_unwrap_list.push(
@@ -479,7 +486,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
             r_id: &str,
             file_path_set: &std::collections::HashSet<String>,
             archive: &mut zip::ZipArchive<R>,
-        ) -> Result<Self, crate::common::SdkError> {
+        ) -> Result<Self, crate::common::SdkErrorReport> {
             #( #field_declaration_list )*
 
             #children_stmt
@@ -521,7 +528,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
     writer_stmt_list.push(
         parse2(quote! {
           if !directory_path.is_empty() && !entry_set.contains(&directory_path) {
-            zip.add_directory(&directory_path, options)?;
+            zip.add_directory(&directory_path, options).map_err(crate::common::SdkError::from)?;
 
             entry_set.insert(directory_path);
           }
@@ -541,7 +548,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
     writer_stmt_list.push(
     parse2(quote! {
       if !#part_name_dir_path_ident.is_empty() && !entry_set.contains(&#part_name_dir_path_ident) {
-        zip.add_directory(&#part_name_dir_path_ident, options)?;
+        zip.add_directory(&#part_name_dir_path_ident, options).map_err(crate::common::SdkError::from)?;
 
         entry_set.insert(#part_name_dir_path_ident);
       }
@@ -560,9 +567,9 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         writer_stmt_list.push(
             parse2(quote! {
               if !entry_set.contains(&self.inner_path) {
-                zip.start_file(&self.inner_path, options)?;
+                zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
 
-                zip.write_all(self.part_content.as_bytes())?;
+                zip.write_all(self.part_content.as_bytes()).map_err(crate::common::SdkError::from)?;
 
                 entry_set.insert(self.inner_path.to_string());
               }
@@ -583,9 +590,9 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         writer_stmt_list.push(
             parse2(quote! {
               if !entry_set.contains(&self.inner_path) {
-                zip.start_file(&self.inner_path, options)?;
+                zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
 
-                zip.write_all(&self.part_content)?;
+                zip.write_all(&self.part_content).map_err(crate::common::SdkError::from)?;
 
                 entry_set.insert(self.inner_path.to_string());
               }
@@ -607,9 +614,10 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         writer_stmt_list.push(
             parse2(quote! {
               if !entry_set.contains(&self.inner_path) {
-                zip.start_file(&self.inner_path, options)?;
+                zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
 
-                zip.write_all(self.root_element.to_xml()?.as_bytes())?;
+                zip.write_all(self.root_element.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
+                    .map_err(crate::common::SdkError::from)?;
 
                 entry_set.insert(self.inner_path.to_string());
               }
@@ -641,15 +649,16 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
                     );
 
                     if !rels_dir_path.is_empty() && !entry_set.contains(&rels_dir_path) {
-                        zip.add_directory(&rels_dir_path, options)?;
+                        zip.add_directory(&rels_dir_path, options).map_err(crate::common::SdkError::from)?;
 
                         entry_set.insert(rels_dir_path);
                     }
 
                     if !entry_set.contains(&self.rels_path) {
-                        zip.start_file(&self.rels_path, options)?;
+                        zip.start_file(&self.rels_path, options).map_err(crate::common::SdkError::from)?;
 
-                        zip.write_all(relationships.to_xml()?.as_bytes())?;
+                        zip.write_all(relationships.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
+                            .map_err(crate::common::SdkError::from)?;
 
                         entry_set.insert(self.rels_path.to_string());
                     }
@@ -702,7 +711,7 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
             parent_path: &str,
             zip: &mut zip::ZipWriter<W>,
             entry_set: &mut std::collections::HashSet<String>,
-        ) -> Result<(), crate::common::SdkError> {
+        ) -> Result<(), crate::common::SdkErrorReport> {
             #( #writer_stmt_list )*
 
             #( #children_writer_stmt_list )*
@@ -716,12 +725,12 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         let part_new_fn: ItemFn = parse2(quote! {
             pub fn new<R: std::io::Read + std::io::Seek>(
                 reader: R,
-            ) -> Result<Self, crate::common::SdkError> {
-                let mut archive = zip::ZipArchive::new(reader)?;
+            ) -> Result<Self, crate::common::SdkErrorReport> {
+                let mut archive = zip::ZipArchive::new(reader).map_err(crate::common::SdkError::from)?;
                 let mut file_path_set = std::collections::HashSet::with_capacity(archive.len());
 
                 for i in 0..archive.len() {
-                    let file = archive.by_index(i)?;
+                    let file = archive.by_index(i).map_err(crate::common::SdkError::from)?;
                     if let Some(path) = file.enclosed_name() {
                         file_path_set.insert(path.to_string_lossy().into_owned());
                     }
@@ -733,14 +742,14 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         .unwrap();
 
         let part_new_from_file_fn: ItemFn = parse2(quote! {
-            pub fn new_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, crate::common::SdkError> {
-                Self::new(std::io::BufReader::new(std::fs::File::open(path)?))
+            pub fn new_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, crate::common::SdkErrorReport> {
+                Self::new(std::io::BufReader::new(std::fs::File::open(path).map_err(crate::common::SdkError::from)?))
             }
         })
         .unwrap();
 
         let part_save_fn: ItemFn = parse2(quote! {
-            pub fn save<W: std::io::Write + std::io::Seek>(&self, writer: W) -> Result<(), crate::common::SdkError> {
+            pub fn save<W: std::io::Write + std::io::Seek>(&self, writer: W) -> Result<(), crate::common::SdkErrorReport> {
                 use std::io::Write;
 
                 let mut entry_set: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -751,13 +760,15 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
                   .compression_method(zip::CompressionMethod::Deflated)
                   .unix_permissions(0o755);
 
-                zip.start_file("[Content_Types].xml", options)?;
+                zip.start_file("[Content_Types].xml", options).map_err(crate::common::SdkError::from)?;
 
-                zip.write_all(self.content_types.to_xml()?.as_bytes())?;
+                zip.write_all(
+                    self.content_types.to_xml().map_err(crate::common::SdkError::from)?.as_bytes()
+                ).map_err(crate::common::SdkError::from)?;
 
                 self.save_zip("", &mut zip, &mut entry_set)?;
 
-                zip.finish()?;
+                zip.finish().map_err(crate::common::SdkError::from)?;
 
                 Ok(())
             }
@@ -765,8 +776,8 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         .unwrap();
 
         let part_save_to_file_fn: ItemFn = parse2(quote! {
-            pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), crate::common::SdkError> {
-                self.save(std::fs::File::create(path)?)
+            pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), crate::common::SdkErrorReport> {
+                self.save(std::fs::File::create(path).map_err(crate::common::SdkError::from)?)
             }
         })
         .unwrap();
@@ -788,13 +799,13 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         })
         .unwrap();
 
-        quote! {
+        Ok(quote! {
             #relationship_type_stmt
 
             #part_struct
 
             #part_impl
-        }
+        })
     } else {
         let part_impl: ItemImpl = parse2(quote! {
             impl #struct_name_ident {
@@ -805,12 +816,12 @@ pub fn gen_open_xml_parts(part: &OpenXmlPart, gen_context: &GenContext) -> Token
         })
         .unwrap();
 
-        quote! {
+        Ok(quote! {
             #relationship_type_stmt
 
             #part_struct
 
             #part_impl
-        }
+        })
     }
 }

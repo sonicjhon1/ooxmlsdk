@@ -1,4 +1,4 @@
-pub use super::super::common::*;
+use super::super::common::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct Relationships {
@@ -9,7 +9,7 @@ pub struct Relationships {
 }
 
 impl std::str::FromStr for Relationships {
-    type Err = SdkError;
+    type Err = SdkErrorReport;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut xml_reader = from_str_inner(s)?;
@@ -19,7 +19,7 @@ impl std::str::FromStr for Relationships {
 }
 
 impl Relationships {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkError> {
+    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_reader_inner(reader)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
@@ -28,7 +28,7 @@ impl Relationships {
     pub fn deserialize_inner<'de, R: XmlReader<'de>>(
         xml_reader: &mut R,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) =
             expect_event_start(xml_reader, xml_event, b"w:Relationships", b"Relationships")?;
 
@@ -41,17 +41,19 @@ impl Relationships {
         let mut relationship = vec![];
 
         for attr in e.attributes() {
-            let attr = attr?;
+            let attr = attr.map_err(SdkError::from)?;
             match attr.key.as_ref() {
                 b"xmlns" => {
                     xmlns = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
                 b"mc:Ignorable" => {
                     mc_ignorable = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
@@ -59,7 +61,8 @@ impl Relationships {
                     if key.starts_with(b"xmlns:") {
                         xmlns_map.insert(
                             String::from_utf8_lossy(&key[6..]).to_string(),
-                            attr.decode_and_unescape_value(xml_reader.decoder())?
+                            attr.decode_and_unescape_value(xml_reader.decoder())
+                                .map_err(SdkError::from)?
                                 .to_string(),
                         );
                     }
@@ -191,13 +194,13 @@ pub struct Relationship {
 
 impl Relationship {
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Result<Self, SdkError> {
+    pub fn from_str(s: &str) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_str_inner(s)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
     }
 
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkError> {
+    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_reader_inner(reader)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
@@ -206,7 +209,7 @@ impl Relationship {
     pub fn deserialize_inner<'de, R: XmlReader<'de>>(
         xml_reader: &mut R,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, SdkErrorReport> {
         let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Relationship", b"Relationship")?;
 
         let mut target_mode = None;
@@ -218,29 +221,34 @@ impl Relationship {
         let mut id = None;
 
         for attr in e.attributes().with_checks(false) {
-            let attr = attr?;
+            let attr = attr.map_err(SdkError::from)?;
 
             match attr.key.as_ref() {
                 b"TargetMode" => {
                     target_mode = Some(TargetMode::from_str(
-                        &attr.decode_and_unescape_value(xml_reader.decoder())?,
+                        &attr
+                            .decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?,
                     )?);
                 }
                 b"Target" => {
                     target = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
                 b"Type" => {
                     r#type = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
                 b"Id" => {
                     id = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
@@ -321,11 +329,11 @@ pub enum TargetMode {
 
 impl TargetMode {
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Result<Self, SdkError> {
+    pub fn from_str(s: &str) -> Result<Self, SdkErrorReport> {
         match s {
             "External" => Ok(Self::External),
             "Internal" => Ok(Self::Internal),
-            _ => Err(SdkError::CommonError(s.to_string())),
+            _ => Err(SdkError::CommonError(s.to_string()))?,
         }
     }
 }

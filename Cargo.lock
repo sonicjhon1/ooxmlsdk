@@ -370,6 +370,7 @@ version = "0.3.0"
 dependencies = [
  "ooxmlsdk-build",
  "quick-xml",
+ "rootcause",
  "thiserror",
  "tracing",
  "zip",
@@ -385,6 +386,7 @@ dependencies = [
  "proc-macro2",
  "quick-xml",
  "quote",
+ "rootcause",
  "serde",
  "serde_derive",
  "serde_json",
@@ -554,6 +556,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
+name = "rootcause"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19b2fa24b30d915f807d1a14eb9eb0947fad76d6e63f165f3969e61a2942a928"
+dependencies = [
+ "hashbrown",
+ "indexmap",
+ "rootcause-internals",
+ "rustc-hash",
+ "triomphe",
+]
+
+[[package]]
+name = "rootcause-internals"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15e09e790e6a1ade68d035e081be5054b03b9329a7b568ea5707c4395053b778"
+dependencies = [
+ "triomphe",
+]
+
+[[package]]
+name = "rustc-hash"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
+
+[[package]]
 name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -700,6 +730,12 @@ checksum = "7a04e24fab5c89c6a36eb8558c9656f30d81de51dfa4d3b45f26b21d61fa0a6c"
 dependencies = [
  "once_cell",
 ]
+
+[[package]]
+name = "triomphe"
+version = "0.1.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd69c5aa8f924c7519d6372789a74eac5b94fb0f8fcf0d4a97eb0bfc3e785f39"
 
 [[package]]
 name = "unicode-ident"

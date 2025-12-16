@@ -30,6 +30,7 @@ microsoft365 = ["ooxmlsdk-build/microsoft365"]
 
 [dependencies]
 quick-xml = { workspace = true }
+rootcause = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zip = { workspace = true, optional = true }

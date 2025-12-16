@@ -5,21 +5,24 @@ use std::collections::HashSet;
 use syn::{Arm, Ident, ItemFn, ItemImpl, LitByteStr, Stmt, Type, parse_str, parse2};
 
 use crate::{
+    error::*,
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
         Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
         OpenXmlSchemaTypeParticle,
     },
-    utils::get_or_panic,
+    utils::HashMapOpsError,
 };
 
-pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
+pub fn gen_deserializers(
+    schema: &OpenXmlSchema,
+    gen_context: &GenContext,
+) -> Result<TokenStream, BuildErrorReport> {
     let mut token_stream_list: Vec<ItemImpl> = vec![];
 
-    let schema_namespace = get_or_panic!(
-        gen_context.uri_namespace_map,
-        schema.target_namespace.as_str()
-    );
+    let schema_namespace = gen_context
+        .uri_namespace_map
+        .try_get(schema.target_namespace.as_str())?;
 
     for schema_enum in &schema.enums {
         let enum_type: Type = parse_str(&format!(
@@ -57,12 +60,12 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         token_stream_list.push(
             parse2(quote! {
               impl std::str::FromStr for #enum_type {
-                type Err = crate::common::SdkError;
+                type Err = crate::common::SdkErrorReport;
 
                 fn from_str(s: &str) -> Result<Self, Self::Err> {
                   match s {
                     #( #variants )*
-                    _ => Err(crate::common::SdkError::CommonError(s.to_string())),
+                    _ => Err(crate::common::SdkError::CommonError(s.to_string()))?,
                   }
                 }
               }
@@ -73,12 +76,12 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         token_stream_list.push(
             parse2(quote! {
               impl #enum_type {
-                pub fn from_bytes(b: &[u8]) -> Result<Self, crate::common::SdkError> {
+                pub fn from_bytes(b: &[u8]) -> Result<Self, crate::common::SdkErrorReport> {
                   match b {
                     #( #byte_variants )*
                     other => Err(crate::common::SdkError::CommonError(
                       String::from_utf8_lossy(other).into_owned(),
-                    )),
+                    ))?,
                   }
                 }
               }
@@ -145,7 +148,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 .unwrap(),
             );
 
-            loop_match_arm_list.push(gen_simple_child_match_arm(type_base_class, gen_context));
+            loop_match_arm_list.push(gen_simple_child_match_arm(type_base_class, gen_context)?);
         } else if schema_type.base_class == "OpenXmlLeafElement" {
             for attr in &schema_type.attributes {
                 attributes.push(attr);
@@ -200,7 +203,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
 
             if schema_type.is_one_sequence_flatten() {
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = get_or_panic!(child_map, schema_type_particle.name.as_str());
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
 
                     let child_property_name_str = child.as_property_name_str();
                     let child_property_name_ident = child.as_property_name_ident();
@@ -247,7 +250,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                         child,
                         gen_context,
                         &mut loop_children_suffix_match_set,
-                    ));
+                    )?);
                 }
             } else {
                 if !schema_type.children.is_empty() {
@@ -272,14 +275,13 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                         &child_choice_enum_type,
                         gen_context,
                         &mut loop_children_suffix_match_set,
-                    ));
+                    )?);
                 }
             }
         } else if schema_type.is_derived {
-            let base_class_type = get_or_panic!(
-                gen_context.type_name_type_map,
-                format!("{type_base_class}/").as_str()
-            );
+            let base_class_type = gen_context
+                .type_name_type_map
+                .try_get(format!("{type_base_class}/").as_str())?;
 
             for attr in &schema_type.attributes {
                 attributes.push(attr);
@@ -293,7 +295,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 && base_class_type.composite_type == "OneSequence"
             {
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = get_or_panic!(child_map, schema_type_particle.name.as_str());
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
 
                     let child_property_name_str = child.as_property_name_str();
                     let child_property_name_ident = child.as_property_name_ident();
@@ -375,14 +377,14 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 && base_class_type.composite_type == "OneSequence"
             {
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = get_or_panic!(child_map, schema_type_particle.name.as_str());
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
 
                     loop_children_match_list.push(gen_one_sequence_match_arm(
                         schema_type_particle,
                         child,
                         gen_context,
                         &mut loop_children_suffix_match_set,
-                    ));
+                    )?);
                 }
             } else {
                 for child in &schema_type.children {
@@ -391,7 +393,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                         &child_choice_enum_type,
                         gen_context,
                         &mut loop_children_suffix_match_set,
-                    ));
+                    )?);
                 }
             }
 
@@ -400,7 +402,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             {
                 let base_first_name = base_class_type.split_name().0;
 
-                loop_match_arm_list.push(gen_simple_child_match_arm(base_first_name, gen_context));
+                loop_match_arm_list.push(gen_simple_child_match_arm(base_first_name, gen_context)?);
             }
         } else {
             panic!("{schema_type:?}");
@@ -417,7 +419,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
                 .unwrap(),
             );
 
-            attr_match_list.push(gen_field_match_arm(attr, gen_context));
+            attr_match_list.push(gen_field_match_arm(attr, gen_context)?);
 
             if attr.is_validator_required() {
                 field_unwrap_list.push(
@@ -451,21 +453,21 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             Some(
                 parse2(quote! {
                     for attr in e.attributes().with_checks(false) {
-                        let attr = attr?;
+                        let attr = attr.map_err(crate::common::SdkError::from)?;
 
                         match attr.key.as_ref() {
                             #( #attr_match_list )*
                             b"xmlns" => {
-                                xmlns = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+                                xmlns = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
                             }
                             b"mc:Ignorable" => {
-                                mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+                                mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
                             }
                             key => {
                                 if let Some(xmlns_key) = key.strip_prefix(b"xmlsns:") {
                                     xmlns_map.insert(
                                         String::from_utf8_lossy(xmlns_key).to_string(),
-                                        attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned(),
+                                        attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned(),
                                     );
                                 }
                             }
@@ -478,7 +480,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
             Some(
                 parse2(quote! {
                   for attr in e.attributes().with_checks(false) {
-                    let attr = attr?;
+                    let attr = attr.map_err(crate::common::SdkError::from)?;
 
                     #[allow(clippy::single_match)]
                     match attr.key.as_ref() {
@@ -551,7 +553,7 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
           pub(crate) fn deserialize_inner<'de, R: crate::common::XmlReader<'de>>(
             xml_reader: &mut R,
             xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-          ) -> Result<Self, crate::common::SdkError> {
+          ) -> Result<Self, crate::common::SdkErrorReport> {
             #expect_event_start_stmt
 
             #( #field_declaration_list )*
@@ -599,15 +601,15 @@ pub fn gen_deserializers(schema: &OpenXmlSchema, gen_context: &GenContext) -> To
         );
     }
 
-    quote! {
+    Ok(quote! {
       #( #token_stream_list )*
-    }
+    })
 }
 
 fn gen_from_str_impl(struct_type: &Type) -> ItemImpl {
     return parse2(quote! {
       impl std::str::FromStr for #struct_type {
-        type Err = crate::common::SdkError;
+        type Err = crate::common::SdkErrorReport;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
           let mut xml_reader = crate::common::from_str_inner(s)?;
@@ -621,7 +623,7 @@ fn gen_from_str_impl(struct_type: &Type) -> ItemImpl {
 
 fn gen_from_reader_fn() -> ItemFn {
     return parse2(quote! {
-        pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, crate::common::SdkError> {
+        pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, crate::common::SdkErrorReport> {
             let mut xml_reader = crate::common::from_reader_inner(reader)?;
 
             Self::deserialize_inner(&mut xml_reader, None)
@@ -634,62 +636,65 @@ fn gen_one_sequence_match_arm(
     child: &OpenXmlSchemaTypeChild,
     gen_context: &GenContext,
     loop_children_suffix_match_set: &mut HashSet<String>,
-) -> Arm {
-    let child_type = get_or_panic!(gen_context.type_name_type_map, child.name.as_str());
+) -> Result<Arm, BuildErrorReport> {
+    let child_type = gen_context
+        .type_name_type_map
+        .try_get(child.name.as_str())?;
 
     let (_, child_prefixed_name) = child.split_name();
     let (_, child_name) = child.split_last_name();
     let child_property_name_ident = child.as_property_name_ident();
 
     let child_prefixed_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_prefixed_name}\"")).unwrap();
-    let child_name_literal: LitByteStr = parse_str(&format!("b\"{child_name}\"")).unwrap();
+        parse_str(&format!("b\"{child_prefixed_name}\"")).map_err(BuildError::from)?;
+    let child_name_literal: LitByteStr =
+        parse_str(&format!("b\"{child_name}\"")).map_err(BuildError::from)?;
 
     let child_variant_type: Type = parse_str(&format!(
         "crate::schemas::{}::{}",
         &child_type.module_name,
         child_type.class_name.to_upper_camel_case()
     ))
-    .unwrap();
+    .map_err(BuildError::from)?;
 
     // TODO: Simplify again
     if loop_children_suffix_match_set.insert(child_name.to_string()) {
         match schema_type_particle.as_occurrence() {
-            Occurrence::Required | Occurrence::Optional => parse2(quote! {
+            Occurrence::Required | Occurrence::Optional => Ok(parse2(quote! {
                 #child_prefixed_name_literal | #child_name_literal => {
                     #child_property_name_ident = Some(std::boxed::Box::new(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     ));
                 }
             })
-            .unwrap(),
-            Occurrence::Repeated => parse2(quote! {
+            .map_err(BuildError::from)?),
+            Occurrence::Repeated => Ok(parse2(quote! {
                 #child_prefixed_name_literal | #child_name_literal => {
                     #child_property_name_ident.push(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     );
                 }
             })
-            .unwrap(),
+            .map_err(BuildError::from)?),
         }
     } else {
         match schema_type_particle.as_occurrence() {
-            Occurrence::Required | Occurrence::Optional => parse2(quote! {
+            Occurrence::Required | Occurrence::Optional => Ok(parse2(quote! {
                 #child_prefixed_name_literal => {
                     #child_property_name_ident = Some(std::boxed::Box::new(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     ));
                 }
             })
-            .unwrap(),
-            Occurrence::Repeated => parse2(quote! {
+            .map_err(BuildError::from)?),
+            Occurrence::Repeated => Ok(parse2(quote! {
                 #child_prefixed_name_literal => {
                     #child_property_name_ident.push(
                         #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                     );
                 }
             })
-            .unwrap(),
+            .map_err(BuildError::from)?),
         }
     }
 }
@@ -699,15 +704,18 @@ fn gen_child_match_arm(
     child_choice_enum_ident: &Type,
     gen_context: &GenContext,
     loop_children_suffix_match_set: &mut HashSet<String>,
-) -> Arm {
-    let child_type = get_or_panic!(gen_context.type_name_type_map, child.name.as_str());
+) -> Result<Arm, BuildErrorReport> {
+    let child_type = gen_context
+        .type_name_type_map
+        .try_get(child.name.as_str())?;
 
     let (_, child_prefixed_name) = child.split_name();
     let (_, child_name) = child.split_last_name();
 
     let child_prefixed_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_prefixed_name}\"")).unwrap();
-    let child_name_literal: LitByteStr = parse_str(&format!("b\"{child_name}\"")).unwrap();
+        parse_str(&format!("b\"{child_prefixed_name}\"")).map_err(BuildError::from)?;
+    let child_name_literal: LitByteStr =
+        parse_str(&format!("b\"{child_name}\"")).map_err(BuildError::from)?;
 
     let child_variant_name_ident = child.as_last_name_ident();
 
@@ -716,56 +724,59 @@ fn gen_child_match_arm(
         &child_type.module_name,
         child_type.class_name.to_upper_camel_case()
     ))
-    .unwrap();
+    .map_err(BuildError::from)?;
 
     if loop_children_suffix_match_set.insert(child_name.to_string()) {
-        return parse2(quote! {
+        return Ok(parse2(quote! {
           #child_prefixed_name_literal | #child_name_literal => {
             children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
               #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
             )));
           }
         })
-        .unwrap();
+        .map_err(BuildError::from)?);
     };
 
-    return parse2(quote! {
+    return Ok(parse2(quote! {
       #child_prefixed_name_literal => {
         children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
           #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
         )));
       }
     })
-    .unwrap();
+    .map_err(BuildError::from)?);
 }
 
-fn gen_simple_child_match_arm(first_name: &str, gen_context: &GenContext) -> Arm {
+fn gen_simple_child_match_arm(
+    first_name: &str,
+    gen_context: &GenContext,
+) -> Result<Arm, BuildErrorReport> {
     if let Some(schema_enum) = gen_context.enum_type_enum_map.get(first_name) {
         let simple_type_name: Type = parse_str(&format!(
             "crate::schemas::{}::{}",
             &schema_enum.module_name,
             schema_enum.name.to_upper_camel_case()
         ))
-        .unwrap();
+        .map_err(BuildError::from)?;
 
-        return parse2(quote! {
+        return Ok(parse2(quote! {
           quick_xml::events::Event::Text(t) => {
             xml_content = Some(#simple_type_name::from_bytes(&t.into_inner())?);
           }
         })
-        .unwrap();
+        .map_err(BuildError::from)?);
     }
 
     let simple_type_str = simple_type_mapping(first_name);
 
-    let enum_type: Type =
-        parse_str(&format!("crate::schemas::simple_type::{simple_type_str}")).unwrap();
+    let enum_type: Type = parse_str(&format!("crate::schemas::simple_type::{simple_type_str}"))
+        .map_err(BuildError::from)?;
 
-    return parse2(match simple_type_str {
+    return Ok(parse2(match simple_type_str {
         "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
         | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
           quick_xml::events::Event::Text(t) => {
-            xml_content = Some(t.decode()?.to_string());
+            xml_content = Some(t.decode().map_err(crate::common::SdkError::from)?.to_string());
           }
         },
         "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
@@ -776,24 +787,30 @@ fn gen_simple_child_match_arm(first_name: &str, gen_context: &GenContext) -> Arm
         "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
         | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => quote! {
           quick_xml::events::Event::Text(t) => {
-            xml_content = Some(t.decode()?.parse::<#enum_type>()?);
+            xml_content = Some(
+              t.decode().map_err(crate::common::SdkError::from)?.parse::<#enum_type>().map_err(crate::common::SdkError::from)?
+            );
           }
         },
-        _ => panic!("{}", simple_type_str),
+        _ => unreachable!("{simple_type_str}"),
     })
-    .unwrap();
+    .map_err(BuildError::from)?);
 }
 
-fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenContext) -> Arm {
+fn gen_field_match_arm(
+    schema: &OpenXmlSchemaTypeAttribute,
+    gen_context: &GenContext,
+) -> Result<Arm, BuildErrorReport> {
     let attr_name_ident = schema.as_name_ident();
     let attr_name_str = schema.as_name_str();
 
-    let attr_name_literal: LitByteStr = parse_str(&format!("b\"{attr_name_str}\"")).unwrap();
+    let attr_name_literal: LitByteStr =
+        parse_str(&format!("b\"{attr_name_str}\"")).map_err(BuildError::from)?;
 
-    parse2(if schema.r#type.starts_with("ListValue<") {
+    Ok(parse2(if schema.r#type.starts_with("ListValue<") {
         quote! {
             #attr_name_literal => {
-                #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+                #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
             }
         }
     } else if schema.r#type.starts_with("EnumValue<") {
@@ -818,15 +835,15 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
             })
             .unwrap();
 
-        let enum_namespace = get_or_panic!(gen_context.prefix_namespace_map, enum_prefix);
+        let enum_namespace = gen_context.prefix_namespace_map.try_get(enum_prefix)?;
 
-        let enum_schema = get_or_panic!(gen_context.prefix_schema_map, enum_namespace.prefix.as_str());
+        let enum_schema = gen_context.prefix_schema_map.try_get( enum_namespace.prefix.as_str())?;
 
         let enum_type: Type = parse_str(&format!(
             "crate::schemas::{}::{enum_name_formatted}",
             enum_schema.module_name,
         ))
-        .unwrap();
+        .map_err(BuildError::from)?;
 
         quote! {
           #attr_name_literal => {
@@ -838,7 +855,7 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
           "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
           | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
             #attr_name_literal => {
-              #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder())?.into_owned());
+              #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
             }
           },
           "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
@@ -849,14 +866,14 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
           "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
           | "UInt64Value" | "DoubleValue" | "SingleValue" => {
             let enum_type: Type =
-              parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).unwrap();
+              parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).map_err(BuildError::from)?;
 
             quote! {
               #attr_name_literal => {
                 #attr_name_ident = Some(
                   attr
-                    .decode_and_unescape_value(xml_reader.decoder())?
-                    .parse::<#enum_type>()?,
+                    .decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?
+                    .parse::<#enum_type>().map_err(crate::common::SdkError::from)?,
                 );
               }
             }
@@ -864,5 +881,5 @@ fn gen_field_match_arm(schema: &OpenXmlSchemaTypeAttribute, gen_context: &GenCon
           _ => panic!("{}", schema.r#type),
         }
     })
-    .unwrap()
+    .map_err(BuildError::from)?)
 }

@@ -5,23 +5,31 @@ use quote::quote;
 use std::{fs, path::Path};
 use syn::{Ident, ItemMod, parse_str};
 
-use crate::generator::{
-    context::GenContext, deserializer::gen_deserializers, open_xml_part::gen_open_xml_parts,
-    open_xml_schema::gen_open_xml_schemas, serializer::gen_serializer, validator::gen_validators,
+use crate::{
+    error::*,
+    generator::{
+        context::GenContext, deserializer::gen_deserializers,
+        open_xml_schema::gen_open_xml_schemas, serializer::gen_serializer,
+    },
+    utils::HashMapOpsError,
 };
 
+pub mod error;
 pub mod generator;
 pub mod includes;
 pub mod models;
 pub mod utils;
 
-pub fn generate(out_dir: impl AsRef<Path>) {
+pub fn generate(out_dir: impl AsRef<Path>) -> Result<(), BuildErrorReport> {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    generate_with(crate_root.join("./data/"), out_dir);
+    generate_with(crate_root.join("./data/"), out_dir)
 }
 
-pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
+pub fn generate_with(
+    data_dir: impl AsRef<Path>,
+    out_dir: impl AsRef<Path>,
+) -> Result<(), BuildErrorReport> {
     let data_dir = data_dir.as_ref();
     let out_dir = out_dir.as_ref();
 
@@ -43,12 +51,12 @@ pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
             .insert(&typed_namespace.namespace, typed_namespace);
     }
 
-    for typed_schema in gen_context.typed_schemas.iter() {
-        for ty in typed_schema.iter() {
-            if !ty.part_class_name.is_empty() {
+    for typed_schemas in gen_context.typed_schemas.iter() {
+        for typed_schema in typed_schemas.iter() {
+            if !typed_schema.part_class_name.is_empty() {
                 gen_context
                     .part_name_type_name_map
-                    .insert(&ty.part_class_name, &ty.name);
+                    .insert(&typed_schema.part_class_name, &typed_schema.name);
             }
         }
     }
@@ -56,33 +64,35 @@ pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
     for schema in gen_context.schemas.iter() {
         let namespace = gen_context
             .uri_namespace_map
-            .get(schema.target_namespace.as_str())
-            .ok_or(format!("{:?}", schema.target_namespace))
-            .unwrap();
+            .try_get(schema.target_namespace.as_str())?;
 
         gen_context
             .prefix_schema_map
             .insert(&namespace.prefix, schema);
 
-        for e in schema.enums.iter() {
-            gen_context.enum_type_enum_map.insert(&e.r#type, e);
+        for schema_enum in schema.enums.iter() {
+            gen_context
+                .enum_type_enum_map
+                .insert(&schema_enum.r#type, schema_enum);
 
             gen_context
                 .enum_type_namespace_map
-                .insert(&e.r#type, namespace);
+                .insert(&schema_enum.r#type, namespace);
         }
 
-        for ty in schema.types.iter() {
-            gen_context.type_name_type_map.insert(&ty.name, ty);
+        for schema_type in schema.types.iter() {
+            gen_context
+                .type_name_type_map
+                .insert(&schema_type.name, schema_type);
 
             gen_context
                 .type_name_namespace_map
-                .insert(&ty.name, namespace);
+                .insert(&schema_type.name, namespace);
 
-            if !ty.part.is_empty() {
+            if !schema_type.part.is_empty() {
                 gen_context
                     .part_name_type_name_map
-                    .insert(&ty.part, &ty.name);
+                    .insert(&schema_type.part, &schema_type.name);
             }
         }
     }
@@ -94,247 +104,273 @@ pub fn generate_with(data_dir: impl AsRef<Path>, out_dir: impl AsRef<Path>) {
         .part_name_type_name_map
         .insert("StylesWithEffectsPart", "w:CT_Styles/w:styles");
 
-    write_schemas(&gen_context, out_dir);
+    write_schemas(&gen_context, out_dir)?;
 
-    write_deserializers(&gen_context, out_dir);
+    write_deserializers(&gen_context, out_dir)?;
 
-    write_serializers(&gen_context, out_dir);
+    write_serializers(&gen_context, out_dir)?;
 
     #[cfg(feature = "parts")]
-    let with_parts = true;
-    #[cfg(not(feature = "parts"))]
-    let with_parts = false;
-
-    if with_parts {
-        write_parts(&gen_context, out_dir);
-    }
+    write_parts(&gen_context, out_dir)?;
 
     #[cfg(feature = "validators")]
-    let with_validators = true;
-    #[cfg(not(feature = "validators"))]
-    let with_validators = false;
+    write_validators(&gen_context, out_dir)?;
 
-    if with_validators {
-        write_validators(&gen_context, out_dir);
-    }
+    Ok(())
 }
 
-pub(crate) fn write_schemas(gen_context: &GenContext, out_dir_path: &Path) {
+pub(crate) fn write_schemas(
+    gen_context: &GenContext,
+    out_dir_path: &Path,
+) -> Result<(), BuildErrorReport> {
     let out_schemas_dir_path = out_dir_path.join("schemas");
     let out_common_dir_path = out_dir_path.join("common");
 
-    fs::create_dir_all(&out_schemas_dir_path).unwrap();
-    fs::create_dir_all(&out_common_dir_path).unwrap();
+    fs::create_dir_all(&out_schemas_dir_path).map_err(BuildError::from)?;
+    fs::create_dir_all(&out_common_dir_path).map_err(BuildError::from)?;
 
-    let mut schemas_mod_use_list: Vec<ItemMod> = vec![];
+    let schemas_mod_use_list = gen_context
+        .schemas
+        .iter()
+        .map(|schema| {
+            return generate_pub_item_mods(
+                gen_open_xml_schemas(schema, gen_context)?,
+                &out_schemas_dir_path,
+                &schema.module_name,
+            );
+        })
+        .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    for schema in gen_context.schemas.iter() {
-        let token_stream = gen_open_xml_schemas(schema, gen_context);
-        let syntax_tree = syn::parse2(token_stream).unwrap();
-        let formatted = prettyplease::unparse(&syntax_tree);
-        let schema_path = out_schemas_dir_path.join(format!("{}.rs", &schema.module_name));
-        fs::write(schema_path, formatted).unwrap();
+    let token_stream: TokenStream =
+        parse_str(include_str!("includes/simple_type.rs")).map_err(BuildError::from)?;
 
-        let schema_mod_ident: Ident = parse_str(&schema.module_name).unwrap();
-        let shcemas_mod_use: ItemMod = parse_str(
-            &quote! {
-              pub mod #schema_mod_ident;
-            }
-            .to_string(),
-        )
-        .unwrap();
-        schemas_mod_use_list.push(shcemas_mod_use);
-    }
-
-    let token_stream: TokenStream = parse_str(include_str!("includes/simple_type.rs")).unwrap();
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let schemas_mod_path = out_schemas_dir_path.join("simple_type.rs");
-    fs::write(schemas_mod_path, formatted).unwrap();
+    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
 
-    let token_stream: TokenStream = parse_str(include_str!("includes/common.rs")).unwrap();
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+    let token_stream: TokenStream =
+        parse_str(include_str!("includes/common.rs")).map_err(BuildError::from)?;
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let schemas_mod_path = out_common_dir_path.join("mod.rs");
-    fs::write(schemas_mod_path, formatted).unwrap();
+    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
 
     let token_stream: TokenStream =
-        parse_str(include_str!("includes/packages/opc_content_types.rs")).unwrap();
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+        parse_str(include_str!("includes/packages/opc_content_types.rs"))
+            .map_err(BuildError::from)?;
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let schemas_mod_path = out_schemas_dir_path.join("opc_content_types.rs");
-    fs::write(schemas_mod_path, formatted).unwrap();
+    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
 
     let token_stream: TokenStream =
-        parse_str(include_str!("includes/packages/opc_relationships.rs")).unwrap();
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+        parse_str(include_str!("includes/packages/opc_relationships.rs"))
+            .map_err(BuildError::from)?;
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let schemas_mod_path = out_schemas_dir_path.join("opc_relationships.rs");
-    fs::write(schemas_mod_path, formatted).unwrap();
+    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
 
     let token_stream: TokenStream =
-        parse_str(include_str!("includes/packages/opc_core_properties.rs")).unwrap();
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+        parse_str(include_str!("includes/packages/opc_core_properties.rs"))
+            .map_err(BuildError::from)?;
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let schemas_mod_path = out_schemas_dir_path.join("opc_core_properties.rs");
-    fs::write(schemas_mod_path, formatted).unwrap();
+    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
 
     let token_stream: TokenStream = quote! {
-      pub mod simple_type;
-      pub mod opc_content_types;
-      pub mod opc_core_properties;
-      pub mod opc_relationships;
-      #( #schemas_mod_use_list )*
+        pub mod simple_type;
+        pub mod opc_content_types;
+        pub mod opc_core_properties;
+        pub mod opc_relationships;
+        #( #schemas_mod_use_list )*
     };
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let schemas_mod_path = out_schemas_dir_path.join("mod.rs");
-    fs::write(schemas_mod_path, formatted).unwrap();
+    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
+
+    Ok(())
 }
 
-pub(crate) fn write_deserializers(gen_context: &GenContext, out_dir_path: &Path) {
+pub(crate) fn write_deserializers(
+    gen_context: &GenContext,
+    out_dir_path: &Path,
+) -> Result<(), BuildErrorReport> {
     let out_deserializers_dir_path = &out_dir_path.join("deserializers");
 
-    fs::create_dir_all(out_deserializers_dir_path).unwrap();
+    fs::create_dir_all(out_deserializers_dir_path).map_err(BuildError::from)?;
 
-    let mut deserializers_mod_use_list: Vec<ItemMod> = vec![];
-
-    for schema in gen_context.schemas.iter() {
-        let token_stream = gen_deserializers(schema, gen_context);
-        let syntax_tree = syn::parse2(token_stream).unwrap();
-        let formatted = prettyplease::unparse(&syntax_tree);
-        let part_path = out_deserializers_dir_path.join(format!("{}.rs", &schema.module_name));
-        fs::write(part_path, formatted).unwrap();
-
-        let deserializer_mod_ident: Ident = parse_str(&schema.module_name).unwrap();
-        let deserializer_mod_use: ItemMod = parse_str(
-            &quote! {
-              pub mod #deserializer_mod_ident;
-            }
-            .to_string(),
-        )
-        .unwrap();
-        deserializers_mod_use_list.push(deserializer_mod_use);
-    }
+    let deserializers_mod_use_list = gen_context
+        .schemas
+        .iter()
+        .map(|schema| {
+            return generate_pub_item_mods(
+                gen_deserializers(schema, gen_context)?,
+                out_deserializers_dir_path,
+                &schema.module_name,
+            );
+        })
+        .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
     let token_stream: TokenStream = quote! {
-      #( #deserializers_mod_use_list )*
+        #( #deserializers_mod_use_list )*
     };
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let deserializers_mod_path = out_deserializers_dir_path.join("mod.rs");
-    fs::write(deserializers_mod_path, formatted).unwrap();
+    fs::write(deserializers_mod_path, formatted).map_err(BuildError::from)?;
+
+    Ok(())
 }
 
-pub(crate) fn write_serializers(gen_context: &GenContext, out_dir_path: &Path) {
+pub(crate) fn write_serializers(
+    gen_context: &GenContext,
+    out_dir_path: &Path,
+) -> Result<(), BuildErrorReport> {
     let out_serializers_dir_path = &out_dir_path.join("serializers");
 
-    fs::create_dir_all(out_serializers_dir_path).unwrap();
+    fs::create_dir_all(out_serializers_dir_path).map_err(BuildError::from)?;
 
-    let mut serializers_mod_use_list: Vec<ItemMod> = vec![];
+    let serializers_mod_use_list = gen_context
+        .schemas
+        .iter()
+        .map(|schema| {
+            return generate_pub_item_mods(
+                gen_serializer(schema, gen_context)?,
+                out_serializers_dir_path,
+                &schema.module_name,
+            );
+        })
+        .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    for schema in gen_context.schemas.iter() {
-        let token_stream = gen_serializer(schema, gen_context);
-        let syntax_tree = syn::parse2(token_stream).unwrap();
-        let formatted = prettyplease::unparse(&syntax_tree);
-        let part_path = out_serializers_dir_path.join(format!("{}.rs", &schema.module_name));
-        fs::write(part_path, formatted).unwrap();
-
-        let serializer_mod_ident: Ident = parse_str(&schema.module_name).unwrap();
-        let serializer_mod_use: ItemMod = parse_str(
-            &quote! {
-              pub mod #serializer_mod_ident;
-            }
-            .to_string(),
-        )
-        .unwrap();
-        serializers_mod_use_list.push(serializer_mod_use);
-    }
-
-    let token_stream: TokenStream = quote! {
-      #( #serializers_mod_use_list )*
+    let mod_rs = quote! {
+        #( #serializers_mod_use_list )*
     };
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+
+    let syntax_tree = syn::parse2(mod_rs).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let serializers_mod_path = out_serializers_dir_path.join("mod.rs");
-    fs::write(serializers_mod_path, formatted).unwrap();
+    fs::write(serializers_mod_path, formatted).map_err(BuildError::from)?;
+
+    Ok(())
 }
 
-pub(crate) fn write_parts(gen_context: &GenContext, out_dir_path: &Path) {
+#[cfg(feature = "parts")]
+pub(crate) fn write_parts(
+    gen_context: &GenContext,
+    out_dir_path: &Path,
+) -> Result<(), BuildErrorReport> {
+    use crate::generator::open_xml_part::gen_open_xml_parts;
+
     let out_parts_dir_path = &out_dir_path.join("parts");
 
-    fs::create_dir_all(out_parts_dir_path).unwrap();
+    fs::create_dir_all(out_parts_dir_path).map_err(BuildError::from)?;
 
-    let mut parts_mod_use_list: Vec<ItemMod> = vec![];
-
-    for part in gen_context.parts.iter() {
-        let token_stream = gen_open_xml_parts(part, gen_context);
-        let syntax_tree = syn::parse2(token_stream).unwrap();
-        let formatted = prettyplease::unparse(&syntax_tree);
-        let part_path = out_parts_dir_path.join(format!("{}.rs", &part.module_name));
-        fs::write(part_path, formatted).unwrap();
-
-        let part_mod_ident: Ident = parse_str(&part.module_name).unwrap();
-        let part_mod_use: ItemMod = parse_str(
-            &quote! {
-              pub mod #part_mod_ident;
-            }
-            .to_string(),
-        )
-        .unwrap();
-        parts_mod_use_list.push(part_mod_use);
-    }
+    let parts_mod_use_list = gen_context
+        .parts
+        .iter()
+        .map(|part| {
+            return generate_pub_item_mods(
+                gen_open_xml_parts(part, gen_context)?,
+                out_parts_dir_path,
+                &part.module_name,
+            );
+        })
+        .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
     let token_stream: TokenStream = quote! {
-      #( #parts_mod_use_list )*
+        #( #parts_mod_use_list )*
     };
 
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
 
     let parts_mod_path = out_parts_dir_path.join("mod.rs");
+    fs::write(parts_mod_path, formatted).map_err(BuildError::from)?;
 
-    fs::write(parts_mod_path, formatted).unwrap();
+    Ok(())
 }
 
-pub(crate) fn write_validators(gen_context: &GenContext, out_dir_path: &Path) {
+#[cfg(feature = "validators")]
+pub(crate) fn write_validators(
+    gen_context: &GenContext,
+    out_dir_path: &Path,
+) -> Result<(), BuildErrorReport> {
+    use crate::generator::validator::gen_validators;
+
     let out_validators_dir_path = &out_dir_path.join("validators");
 
-    fs::create_dir_all(out_validators_dir_path).unwrap();
+    fs::create_dir_all(out_validators_dir_path).map_err(BuildError::from)?;
 
-    let mut validators_mod_use_list: Vec<ItemMod> = vec![];
-
-    for part in gen_context.schemas.iter() {
-        let token_stream = gen_validators(part, gen_context);
-        let syntax_tree = syn::parse2(token_stream).unwrap();
-        let formatted = prettyplease::unparse(&syntax_tree);
-        let part_path = out_validators_dir_path.join(format!("{}.rs", &part.module_name));
-        fs::write(part_path, formatted).unwrap();
-
-        let validator_mod_ident: Ident = parse_str(&part.module_name).unwrap();
-        let validator_mod_use: ItemMod = parse_str(
-            &quote! {
-              pub mod #validator_mod_ident;
-            }
-            .to_string(),
-        )
-        .unwrap();
-        validators_mod_use_list.push(validator_mod_use);
-    }
+    let validators_mod_use_list = gen_context
+        .schemas
+        .iter()
+        .map(|part| {
+            return generate_pub_item_mods(
+                gen_validators(part, gen_context)?,
+                out_validators_dir_path,
+                &part.module_name,
+            );
+        })
+        .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
     let token_stream: TokenStream = quote! {
-      #( #validators_mod_use_list )*
+        #( #validators_mod_use_list )*
     };
-    let syntax_tree = syn::parse2(token_stream).unwrap();
+
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
     let formatted = prettyplease::unparse(&syntax_tree);
+
     let validators_mod_path = out_validators_dir_path.join("mod.rs");
-    fs::write(validators_mod_path, formatted).unwrap();
+    fs::write(validators_mod_path, formatted).map_err(BuildError::from)?;
+
+    Ok(())
+}
+
+pub(crate) fn generate_pub_item_mods(
+    token_stream: TokenStream,
+    directory: &Path,
+    module_name: &str,
+) -> Result<ItemMod, BuildErrorReport> {
+    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
+    let formatted = prettyplease::unparse(&syntax_tree);
+
+    let module_path = directory.join(format!("{module_name}.rs"));
+    fs::write(module_path, formatted).map_err(BuildError::from)?;
+
+    let mod_ident: Ident = parse_str(module_name).map_err(BuildError::from)?;
+    let mod_item = syn::parse2(quote! {
+        pub mod #mod_ident;
+    })
+    .map_err(BuildError::from)?;
+
+    return Ok(mod_item);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
 
     #[test]
-    fn test_gen() { generate("src"); }
+    fn test_gen() {
+        generate(Path::new(&env::var("OUT_DIR").unwrap()).join("./test_gen/")).unwrap();
+    }
 }

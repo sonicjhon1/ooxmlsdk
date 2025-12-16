@@ -1,27 +1,26 @@
 use quick_xml::{
     Decoder, Reader,
-    encoding::EncodingError,
-    events::{BytesStart, Event, attributes::AttrError},
+    events::{BytesStart, Event},
 };
-use std::{
-    io::BufRead,
-    num::{ParseFloatError, ParseIntError},
-};
+use rootcause::prelude::*;
+use std::io::BufRead;
 use thiserror::Error;
 use tracing::*;
+
+pub type SdkErrorReport = Report<SdkError>;
 
 #[derive(Error, Debug)]
 pub enum SdkError {
     #[error("quick_xml error")]
     QuickXmlError(#[from] quick_xml::Error),
     #[error("quick_xml encoding error")]
-    QuickEncodingError(#[from] EncodingError),
+    QuickEncodingError(#[from] quick_xml::encoding::EncodingError),
     #[error("quick_xml attr error")]
-    AttrError(#[from] AttrError),
+    AttrError(#[from] quick_xml::events::attributes::AttrError),
     #[error("ParseIntError")]
-    ParseIntError(#[from] ParseIntError),
+    ParseIntError(#[from] std::num::ParseIntError),
     #[error("ParseFloatError")]
-    ParseFloatError(#[from] ParseFloatError),
+    ParseFloatError(#[from] std::num::ParseFloatError),
     #[error("StdFmtError")]
     StdFmtError(#[from] std::fmt::Error),
     #[error("StdIoError")]
@@ -108,7 +107,7 @@ pub fn resolve_zip_file_path(path: &str) -> String {
 }
 
 #[inline]
-pub(crate) fn from_reader_inner<R: BufRead>(reader: R) -> Result<IoReader<R>, SdkError> {
+pub(crate) fn from_reader_inner<R: BufRead>(reader: R) -> Result<IoReader<R>, SdkErrorReport> {
     let mut xml_reader = quick_xml::Reader::from_reader(reader);
     xml_reader.config_mut().check_end_names = false;
 
@@ -116,7 +115,7 @@ pub(crate) fn from_reader_inner<R: BufRead>(reader: R) -> Result<IoReader<R>, Sd
 }
 
 #[inline]
-pub(crate) fn from_str_inner(s: &str) -> Result<SliceReader<'_>, SdkError> {
+pub(crate) fn from_str_inner(s: &str) -> Result<SliceReader<'_>, SdkErrorReport> {
     let mut xml_reader = quick_xml::Reader::from_str(s);
     xml_reader.config_mut().check_end_names = false;
 
@@ -124,7 +123,7 @@ pub(crate) fn from_str_inner(s: &str) -> Result<SliceReader<'_>, SdkError> {
 }
 
 #[inline]
-pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
+pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkErrorReport> {
     match b {
         b"true" | b"1" | b"True" | b"TRUE" | b"t" | b"Yes" | b"YES" | b"yes" | b"y" => Ok(true),
         b"false" | b"0" | b"False" | b"FALSE" | b"f" | b"No" | b"NO" | b"no" | b"n" | b"" => {
@@ -132,7 +131,7 @@ pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkError> {
         }
         other => Err(SdkError::CommonError(
             String::from_utf8_lossy(other).into_owned(),
-        )),
+        ))?,
     }
 }
 
@@ -142,7 +141,7 @@ pub(crate) fn expect_event_start<'de>(
     xml_event: Option<(BytesStart<'de>, bool)>,
     tag_prefixed: &[u8],
     tag: &[u8],
-) -> Result<(BytesStart<'de>, bool), SdkError> {
+) -> Result<(BytesStart<'de>, bool), SdkErrorReport> {
     debug!("xml_event: {:?}", xml_event);
 
     if let Some((event, empty_tag)) = xml_event {
@@ -157,7 +156,8 @@ pub(crate) fn expect_event_start<'de>(
             Event::Start(b) => break (b, false),
             Event::Empty(b) => break (b, true),
             Event::Eof => {
-                return Err(SdkError::UnknownError);
+                return Err(SdkError::UnknownError)
+                    .attach(format!("Reached EOF when reading [{event:?}]"));
             }
             _ => continue,
         }
@@ -170,13 +170,15 @@ pub(crate) fn expect_event_start<'de>(
         let expected_tag_prefixed = String::from_utf8_lossy(tag_prefixed).to_string();
         let expected_tag = String::from_utf8_lossy(tag).to_string();
         let found_event_name = String::from_utf8_lossy(event_name).to_string();
+
         warn!(
             "Mismatch: [{found_event_name}] does not match [{expected_tag_prefixed}] OR [{expected_tag}]"
         );
-        return Err(SdkError::MismatchError {
+
+        Err(SdkError::MismatchError {
             expected: format!("{expected_tag_prefixed} OR {expected_tag}"),
             found: found_event_name,
-        });
+        })?;
     }
 
     Ok((event, empty_tag))

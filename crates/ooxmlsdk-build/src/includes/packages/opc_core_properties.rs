@@ -1,4 +1,4 @@
-pub use super::super::common::*;
+use super::super::common::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct CoreProperties {
@@ -23,7 +23,7 @@ pub struct CoreProperties {
 }
 
 impl std::str::FromStr for CoreProperties {
-    type Err = SdkError;
+    type Err = SdkErrorReport;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut xml_reader = from_str_inner(s)?;
@@ -33,7 +33,7 @@ impl std::str::FromStr for CoreProperties {
 }
 
 impl CoreProperties {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkError> {
+    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_reader_inner(reader)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
@@ -42,7 +42,7 @@ impl CoreProperties {
     pub fn deserialize_inner<'de, R: XmlReader<'de>>(
         xml_reader: &mut R,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) = expect_event_start(
             xml_reader,
             xml_event,
@@ -87,17 +87,19 @@ impl CoreProperties {
         let mut version: Option<String> = None;
 
         for attr in e.attributes() {
-            let attr = attr?;
+            let attr = attr.map_err(SdkError::from)?;
             match attr.key.as_ref() {
                 b"xmlns" => {
                     xmlns = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
                 b"mc:Ignorable" => {
                     mc_ignorable = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .to_string(),
                     );
                 }
@@ -105,7 +107,8 @@ impl CoreProperties {
                     if key.starts_with(b"xmlns:") {
                         xmlns_map.insert(
                             String::from_utf8_lossy(&key[6..]).to_string(),
-                            attr.decode_and_unescape_value(xml_reader.decoder())?
+                            attr.decode_and_unescape_value(xml_reader.decoder())
+                                .map_err(SdkError::from)?
                                 .to_string(),
                         );
                     }
@@ -120,105 +123,110 @@ impl CoreProperties {
                         match e.name().as_ref() {
                             b"cp:category" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    category = Some(t.decode()?.to_string())
+                                    category = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"cp:contentStatus" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    content_status = Some(t.decode()?.to_string())
+                                    content_status =
+                                        Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dcterms:created" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    created = Some(t.decode()?.to_string())
+                                    created = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dc:creator" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    creator = Some(t.decode()?.to_string())
+                                    creator = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dc:description" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    description = Some(t.decode()?.to_string())
+                                    description =
+                                        Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dc:identifier" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    identifier = Some(t.decode()?.to_string())
+                                    identifier =
+                                        Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"cp:keywords" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    keywords = Some(t.decode()?.to_string())
+                                    keywords = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dc:language" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    language = Some(t.decode()?.to_string())
+                                    language = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"cp:lastModifiedBy" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    last_modified_by = Some(t.decode()?.to_string())
+                                    last_modified_by =
+                                        Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"cp:lastPrinted" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    last_printed = Some(t.decode()?.to_string())
+                                    last_printed =
+                                        Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dcterms:modified" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    modified = Some(t.decode()?.to_string())
+                                    modified = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"cp:revision" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    revision = Some(t.decode()?.to_string())
+                                    revision = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dc:subject" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    subject = Some(t.decode()?.to_string())
+                                    subject = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"dc:title" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    title = Some(t.decode()?.to_string())
+                                    title = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;
                             }
                             b"cp:version" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
-                                    version = Some(t.decode()?.to_string())
+                                    version = Some(t.decode().map_err(SdkError::from)?.to_string())
                                 }
 
                                 xml_reader.next()?;

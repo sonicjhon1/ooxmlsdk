@@ -1,4 +1,4 @@
-pub use super::super::common::*;
+use super::super::common::*;
 
 #[derive(Clone, Debug, Default)]
 pub struct Types {
@@ -17,7 +17,7 @@ pub enum TypesChildChoice {
 }
 
 impl std::str::FromStr for Types {
-    type Err = SdkError;
+    type Err = SdkErrorReport;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut xml_reader = from_str_inner(s)?;
@@ -27,7 +27,7 @@ impl std::str::FromStr for Types {
 }
 
 impl Types {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkError> {
+    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_reader_inner(reader)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
@@ -36,7 +36,7 @@ impl Types {
     pub(crate) fn deserialize_inner<'de, R: XmlReader<'de>>(
         xml_reader: &mut R,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"w:Types", b"Types")?;
 
         let mut xmlns = None;
@@ -46,18 +46,20 @@ impl Types {
         let mut children = vec![];
 
         for attr in e.attributes().with_checks(false) {
-            let attr = attr?;
+            let attr = attr.map_err(SdkError::from)?;
 
             match attr.key.as_ref() {
                 b"xmlns" => {
                     xmlns = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .into_owned(),
                     );
                 }
                 b"mc:Ignorable" => {
                     mc_ignorable = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .into_owned(),
                     );
                 }
@@ -65,7 +67,8 @@ impl Types {
                     if key.starts_with(b"xmlns:") {
                         xmlns_map.insert(
                             String::from_utf8_lossy(&key[6..]).to_string(),
-                            attr.decode_and_unescape_value(xml_reader.decoder())?
+                            attr.decode_and_unescape_value(xml_reader.decoder())
+                                .map_err(SdkError::from)?
                                 .into_owned(),
                         );
                     }
@@ -205,7 +208,7 @@ pub struct Default {
 }
 
 impl std::str::FromStr for Default {
-    type Err = SdkError;
+    type Err = SdkErrorReport;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut xml_reader = from_str_inner(s)?;
@@ -215,7 +218,7 @@ impl std::str::FromStr for Default {
 }
 
 impl Default {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkError> {
+    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_reader_inner(reader)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
@@ -224,25 +227,27 @@ impl Default {
     pub fn deserialize_inner<'de, R: XmlReader<'de>>(
         xml_reader: &mut R,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, SdkErrorReport> {
         let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Default", b"Default")?;
 
         let mut extension = None;
         let mut content_type = None;
 
         for attr in e.attributes().with_checks(false) {
-            let attr = attr?;
+            let attr = attr.map_err(SdkError::from)?;
 
             match attr.key.as_ref() {
                 b"Extension" => {
                     extension = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .into_owned(),
                     );
                 }
                 b"ContentType" => {
                     content_type = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .into_owned(),
                     );
                 }
@@ -309,7 +314,7 @@ pub struct Override {
 }
 
 impl std::str::FromStr for Override {
-    type Err = SdkError;
+    type Err = SdkErrorReport;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut xml_reader = from_str_inner(s)?;
@@ -319,7 +324,7 @@ impl std::str::FromStr for Override {
 }
 
 impl Override {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkError> {
+    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = from_reader_inner(reader)?;
 
         Self::deserialize_inner(&mut xml_reader, None)
@@ -328,25 +333,27 @@ impl Override {
     pub(crate) fn deserialize_inner<'de, R: XmlReader<'de>>(
         xml_reader: &mut R,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkError> {
+    ) -> Result<Self, SdkErrorReport> {
         let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Override", b"Override")?;
 
         let mut content_type = None;
         let mut part_name = None;
 
         for attr in e.attributes().with_checks(false) {
-            let attr = attr?;
+            let attr = attr.map_err(SdkError::from)?;
 
             match attr.key.as_ref() {
                 b"ContentType" => {
                     content_type = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .into_owned(),
                     );
                 }
                 b"PartName" => {
                     part_name = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())?
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(SdkError::from)?
                             .into_owned(),
                     );
                 }

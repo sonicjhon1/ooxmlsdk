@@ -7,11 +7,12 @@ use std::{
 };
 
 use crate::{
+    error::BuildErrorReport,
     models::{
         OpenXmlNamespace, OpenXmlPart, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
         TypedNamespace, TypedSchema,
     },
-    utils::get_or_panic,
+    utils::HashMapOpsError,
 };
 
 #[derive(Debug, Default)]
@@ -101,13 +102,14 @@ impl<'a> GenContext<'a> {
 
         let typed_namespaces: Vec<TypedNamespace> = serde_json::from_reader(file).unwrap();
 
-        let mut part_name_part_map: HashMap<String, &OpenXmlPart> = HashMap::new();
-        let mut part_name_version_map: HashMap<String, String> = HashMap::new();
+        let mut part_name_version_map: HashMap<String, String> =
+            HashMap::with_capacity(parts.len());
+        let mut part_name_part_map: HashMap<String, &OpenXmlPart> =
+            HashMap::with_capacity(parts.len());
 
         for part in parts.iter() {
-            part_name_part_map.insert(part.name.to_string(), part);
-
-            part_name_version_map.insert(part.name.to_string(), part.version.to_string());
+            part_name_version_map.insert(part.name.clone(), part.version.clone());
+            part_name_part_map.insert(part.name.clone(), part);
         }
 
         let mut uri_namespace_version_map: HashMap<&str, &str> = HashMap::new();
@@ -119,8 +121,8 @@ impl<'a> GenContext<'a> {
         let mut type_name_version_map: HashMap<String, String> = HashMap::new();
 
         for schema in schemas.iter() {
-            for ty in schema.types.iter() {
-                type_name_version_map.insert(ty.name.clone(), ty.version.clone());
+            for schema_type in schema.types.iter() {
+                type_name_version_map.insert(schema_type.name.clone(), schema_type.version.clone());
             }
         }
 
@@ -142,27 +144,32 @@ impl<'a> GenContext<'a> {
             &mut part_name_set,
             "WordprocessingDocument",
             &part_name_part_map,
-        );
+        )
+        .unwrap();
 
         #[cfg(feature = "xlsx")]
         gen_part_name_set(
             &mut part_name_set,
             "SpreadsheetDocument",
             &part_name_part_map,
-        );
+        )
+        .unwrap();
 
         #[cfg(feature = "pptx")]
         gen_part_name_set(
             &mut part_name_set,
             "PresentationDocument",
             &part_name_part_map,
-        );
-
-        parts.retain(|x| part_name_set.contains(&x.name));
+        )
+        .unwrap();
 
         parts.retain(|x| {
+            if !part_name_set.contains(&x.name) {
+                return false;
+            }
+
             if let Some(part_type_name) = part_type_name_map.get(x.name.as_str()) {
-                let type_version = get_or_panic!(type_name_version_map, *part_type_name);
+                let type_version = type_name_version_map.try_get(*part_type_name).unwrap();
 
                 check_office_version(&x.version) && check_office_version(type_version)
             } else {
@@ -173,28 +180,28 @@ impl<'a> GenContext<'a> {
         for part in parts.iter_mut() {
             part.children.retain(|x| {
                 if x.is_data_part_reference {
-                    true
+                    return true;
+                }
+
+                let child_version = part_name_version_map.try_get(&x.name).unwrap();
+
+                if let Some(part_type_name) = part_type_name_map.get(x.name.as_str()) {
+                    let type_version = type_name_version_map.try_get(*part_type_name).unwrap();
+
+                    check_office_version(child_version) && check_office_version(type_version)
                 } else {
-                    let child_version = get_or_panic!(part_name_version_map, &x.name);
-
-                    if let Some(part_type_name) = part_type_name_map.get(x.name.as_str()) {
-                        let type_version = get_or_panic!(type_name_version_map, *part_type_name);
-
-                        check_office_version(child_version) && check_office_version(type_version)
-                    } else {
-                        check_office_version(child_version)
-                    }
+                    check_office_version(child_version)
                 }
             });
         }
 
         for schema in schemas.iter_mut() {
-            for ty in schema.types.iter_mut() {
-                ty.module_name = schema.module_name.clone();
+            for schema_type in schema.types.iter_mut() {
+                schema_type.module_name = schema.module_name.clone();
             }
 
-            for e in schema.enums.iter_mut() {
-                e.module_name = schema.module_name.clone();
+            for schema_enum in schema.enums.iter_mut() {
+                schema_enum.module_name = schema.module_name.clone();
             }
         }
 
@@ -210,39 +217,43 @@ impl<'a> GenContext<'a> {
 
         for part in parts.iter() {
             if part.base == "OpenXmlPart" && !part.root.is_empty() {
-                let type_name = get_or_panic!(part_type_name_map, part.name.as_str());
+                let type_name = part_type_name_map.try_get(part.name.as_str()).unwrap();
 
-                gen_type_name_set(&mut type_name_set, type_name, &type_name_type_map)
+                gen_type_name_set(&mut type_name_set, type_name, &type_name_type_map).unwrap()
             }
         }
 
         for schema in schemas.iter_mut() {
-            for e in schema.enums.iter_mut() {
-                e.facets.retain(|x| check_office_version(&x.version));
+            for schema_enum in schema.enums.iter_mut() {
+                schema_enum
+                    .facets
+                    .retain(|x| check_office_version(&x.version));
             }
 
             schema.enums.retain(|x| check_office_version(&x.version));
 
-            for ty in schema.types.iter_mut() {
-                ty.attributes.retain(|x| check_office_version(&x.version));
+            for schema_type in schema.types.iter_mut() {
+                schema_type
+                    .attributes
+                    .retain(|x| check_office_version(&x.version));
 
-                ty.children.retain(|x| {
-                    let child_type_version = get_or_panic!(type_name_version_map, x.name.as_str());
+                schema_type.children.retain(|x| {
+                    let child_type_version =
+                        type_name_version_map.try_get_mut(x.name.as_str()).unwrap();
 
                     check_office_version(child_type_version)
                 });
 
-                ty.particle.check_particle_version();
+                schema_type.particle.check_particle_version();
             }
 
-            schema
-                .types
-                .retain(|x: &OpenXmlSchemaType| check_office_version(&x.version));
+            schema.types.retain(|x| check_office_version(&x.version));
         }
 
         schemas.retain(|x| {
-            let schema_namespace_version =
-                get_or_panic!(uri_namespace_version_map, x.target_namespace.as_str());
+            let schema_namespace_version = uri_namespace_version_map
+                .try_get(x.target_namespace.as_str())
+                .unwrap();
 
             check_office_version(schema_namespace_version)
         });
@@ -262,18 +273,26 @@ pub(crate) fn gen_type_name_set(
     type_name_set: &mut HashSet<String>,
     type_name: &str,
     type_name_type_map: &HashMap<String, &OpenXmlSchemaType>,
-) {
+) -> Result<(), BuildErrorReport> {
     if type_name_set.insert(type_name.to_string()) {
-        let ty = type_name_type_map.get(type_name).unwrap();
+        let schema_type = type_name_type_map.try_get(type_name)?;
 
-        if ty.is_derived {
-            type_name_set.insert(type_name[00..type_name.find('/').unwrap() + 1].to_string());
+        if schema_type.is_derived {
+            let (type_base_class, _) = schema_type.split_name();
+            // TODO: Remove this
+            debug_assert_eq!(
+                format!("{type_base_class}/"),
+                type_name[00..type_name.find('/').unwrap() + 1].to_string()
+            );
+            type_name_set.insert(format!("{type_base_class}/"));
         }
 
-        for type_child in ty.children.iter() {
-            gen_type_name_set(type_name_set, &type_child.name, type_name_type_map)
+        for type_child in schema_type.children.iter() {
+            gen_type_name_set(type_name_set, &type_child.name, type_name_type_map)?;
         }
     }
+
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -281,18 +300,20 @@ pub(crate) fn gen_part_name_set(
     part_name_set: &mut HashSet<String>,
     part_name: &str,
     part_name_part_map: &HashMap<String, &OpenXmlPart>,
-) {
+) -> Result<(), BuildErrorReport> {
     if part_name_set.insert(part_name.to_string()) {
-        let part = part_name_part_map.get(part_name).unwrap();
+        let part = part_name_part_map.try_get(part_name).unwrap();
 
         for part_child in part.children.iter() {
             if part_child.is_data_part_reference {
                 continue;
             }
 
-            gen_part_name_set(part_name_set, &part_child.name, part_name_part_map);
+            gen_part_name_set(part_name_set, &part_child.name, part_name_part_map)?;
         }
     }
+
+    Ok(())
 }
 
 pub(crate) fn check_office_version(version: &str) -> bool {

@@ -6,11 +6,15 @@ use syn::{Arm, Ident, ItemImpl, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
+    error::*,
     models::{Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
-    utils::get_or_panic,
+    utils::HashMapOpsError,
 };
 
-pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
+pub fn gen_validators(
+    schema: &OpenXmlSchema,
+    gen_context: &GenContext,
+) -> Result<TokenStream, BuildErrorReport> {
     let mut token_stream_list: Vec<ItemImpl> = vec![];
 
     for schema_type in &schema.types {
@@ -51,10 +55,7 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 }
 
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map
-                        .get(schema_type_particle.name.as_str())
-                        .ok_or(&schema_type_particle.name)
-                        .unwrap();
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
                     let child_name_ident = child.as_property_name_ident();
 
                     match schema_type_particle.as_occurrence() {
@@ -98,7 +99,7 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                     &schema.module_name,
                     schema_type.class_name.to_upper_camel_case()
                 ))
-                .unwrap();
+                .map_err(BuildError::from)?;
 
                 let mut child_match_arm_list: Vec<Arm> = vec![];
 
@@ -137,10 +138,9 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 }
             }
         } else if schema_type.is_derived {
-            let base_class_type = get_or_panic!(
-                gen_context.type_name_type_map,
-                format!("{type_base_class}/").as_str()
-            );
+            let base_class_type = gen_context
+                .type_name_type_map
+                .try_get(format!("{type_base_class}/").as_str())?;
 
             for attr in &base_class_type.attributes {
                 attr_validator_stmt_list.extend(gen_attr_validator_stmt_list(attr));
@@ -156,10 +156,7 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 }
 
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map
-                        .get(schema_type_particle.name.as_str())
-                        .ok_or(&schema_type_particle.name)
-                        .unwrap();
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
                     let child_name_ident = child.as_property_name_ident();
 
                     match schema_type_particle.as_occurrence() {
@@ -248,7 +245,7 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
         token_stream_list.push(
             parse2(quote! {
               impl #struct_type {
-                pub fn validate(&self) -> Result<bool, crate::common::SdkError> {
+                pub fn validate(&self) -> Result<bool, crate::common::SdkErrorReport> {
                   #( #attr_validator_stmt_list )*
 
                   #( #children_validator_stmt_list )*
@@ -261,9 +258,9 @@ pub fn gen_validators(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
         );
     }
 
-    quote! {
+    Ok(quote! {
       #( #token_stream_list )*
-    }
+    })
 }
 
 fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt> {
@@ -409,7 +406,7 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                                     if required {
                                         attr_validator_stmt_list.push(
                                             parse2(quote! {
-                                              if self.#attr_name_ident.parse::<i64>()? < #value {
+                                              if self.#attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? < #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             })
@@ -418,7 +415,7 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                                     } else {
                                         attr_validator_stmt_list.push(
                                             parse2(quote! {
-                                              if #attr_name_ident.parse::<i64>()? < #value {
+                                              if #attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? < #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             })
@@ -480,7 +477,7 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                                     if required {
                                         attr_validator_stmt_list.push(
                                             parse2(quote! {
-                                              if self.#attr_name_ident.parse::<i64>()? > #value {
+                                              if self.#attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? > #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             })
@@ -489,7 +486,7 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                                     } else {
                                         attr_validator_stmt_list.push(
                                             parse2(quote! {
-                                              if #attr_name_ident.parse::<i64>()? > #value {
+                                              if #attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? > #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             })

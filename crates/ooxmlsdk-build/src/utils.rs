@@ -1,4 +1,6 @@
+use crate::error::BuildError;
 use heck::{ToSnakeCase, ToUpperCamelCase};
+use std::collections::HashMap;
 
 pub fn escape_snake_case(name: &str) -> String {
     let name = name.to_snake_case();
@@ -23,10 +25,35 @@ pub fn escape_upper_camel_case(name: &str) -> String {
     }
 }
 
-macro_rules! get_or_panic {
-    ($map:expr_2021, $key:expr_2021) => {
-        $map.get($key).ok_or_else(|| format!("{:?}", $key)).unwrap()
-    };
+pub trait HashMapOpsError<K, V> {
+    fn try_get(&self, key: K) -> Result<&V, BuildError>;
+    fn try_get_mut(&mut self, key: K) -> Result<&mut V, BuildError>;
 }
 
-pub(crate) use get_or_panic;
+impl<K: AsRef<str>, V> HashMapOpsError<K, V> for HashMap<&str, V> {
+    fn try_get(&self, key: K) -> Result<&V, BuildError> {
+        return self
+            .get(key.as_ref())
+            .ok_or_else(|| BuildError::HashMapExpectedSomeError(key.as_ref().to_string()));
+    }
+
+    fn try_get_mut(&mut self, key: K) -> Result<&mut V, BuildError> {
+        return self
+            .get_mut(key.as_ref())
+            .ok_or_else(|| BuildError::HashMapExpectedSomeError(key.as_ref().to_string()));
+    }
+}
+
+impl<K: AsRef<str>, V> HashMapOpsError<K, V> for HashMap<String, V> {
+    fn try_get(&self, key: K) -> Result<&V, BuildError> {
+        return self
+            .get(key.as_ref())
+            .ok_or_else(|| BuildError::HashMapExpectedSomeError(key.as_ref().to_string()));
+    }
+
+    fn try_get_mut(&mut self, key: K) -> Result<&mut V, BuildError> {
+        return self
+            .get_mut(key.as_ref())
+            .ok_or_else(|| BuildError::HashMapExpectedSomeError(key.as_ref().to_string()));
+    }
+}

@@ -6,18 +6,20 @@ use syn::{Arm, ItemFn, ItemImpl, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
+    error::*,
     models::{Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
-    utils::get_or_panic,
+    utils::HashMapOpsError,
 };
 
-pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> TokenStream {
+pub fn gen_serializer(
+    schema: &OpenXmlSchema,
+    gen_context: &GenContext,
+) -> Result<TokenStream, BuildErrorReport> {
     let mut token_stream_list: Vec<ItemImpl> = vec![];
 
     let schema_namespace = gen_context
         .uri_namespace_map
-        .get(schema.target_namespace.as_str())
-        .ok_or(format!("{:?}", schema.target_namespace))
-        .unwrap();
+        .try_get(schema.target_namespace.as_str())?;
 
     for schema_enum in &schema.enums {
         let enum_type: Type = parse_str(&format!(
@@ -85,14 +87,14 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
         ))
         .unwrap();
 
-        let (_, last_name) = schema_type.split_name();
-        let (last_name_prefix, last_name_suffix) = last_name.split_once(':').unwrap();
+        let (type_base_class, type_prefixed_name) = schema_type.split_name();
+        let (type_prefix, type_name) = type_prefixed_name.split_once(':').unwrap();
 
-        let last_name_start_tag = format!("<{last_name}");
-        let last_name_suffix_start_tag = format!("<{last_name_suffix}");
+        let prefixed_name_start_tag = format!("<{type_prefixed_name}");
+        let name_start_tag = format!("<{type_name}");
 
-        let last_name_end_tag = format!("</{last_name}>");
-        let last_name_suffix_end_tag = format!("</{last_name_suffix}>");
+        let prefixed_name_end_tag = format!("</{type_prefixed_name}>");
+        let name_end_tag = format!("</{type_name}>");
 
         let end_tag_writer;
 
@@ -120,10 +122,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
             };
 
             end_writer = quote! {
-              if xmlns_prefix == #last_name_prefix {
-                writer.write_str(#last_name_suffix_end_tag)?;
+              if xmlns_prefix == #type_prefix {
+                writer.write_str(#name_end_tag)?;
               } else {
-                writer.write_str(#last_name_end_tag)?;
+                writer.write_str(#prefixed_name_end_tag)?;
               }
             };
         } else if schema_type.base_class == "OpenXmlLeafElement" {
@@ -155,10 +157,7 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map
-                        .get(schema_type_particle.name.as_str())
-                        .ok_or(&schema_type_particle.name)
-                        .unwrap();
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
                     let child_name_ident = child.as_property_name_ident();
 
                     match schema_type_particle.as_occurrence() {
@@ -202,10 +201,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 };
 
                 end_writer = quote! {
-                  if xmlns_prefix == #last_name_prefix {
-                    writer.write_str(#last_name_suffix_end_tag)?;
+                  if xmlns_prefix == #type_prefix {
+                    writer.write_str(#name_end_tag)?;
                   } else {
-                    writer.write_str(#last_name_end_tag)?;
+                    writer.write_str(#prefixed_name_end_tag)?;
                   }
                 };
             } else {
@@ -226,18 +225,17 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 };
 
                 end_writer = quote! {
-                  if xmlns_prefix == #last_name_prefix {
-                    writer.write_str(#last_name_suffix_end_tag)?;
+                  if xmlns_prefix == #type_prefix {
+                    writer.write_str(#name_end_tag)?;
                   } else {
-                    writer.write_str(#last_name_end_tag)?;
+                    writer.write_str(#prefixed_name_end_tag)?;
                   }
                 };
             }
         } else if schema_type.is_derived {
-            let base_class_type = get_or_panic!(
-                gen_context.type_name_type_map,
-                &schema_type.name[0..schema_type.name.find('/').unwrap() + 1]
-            );
+            let base_class_type = gen_context
+                .type_name_type_map
+                .try_get(format!("{type_base_class}/").as_str())?;
 
             for attr in &base_class_type.attributes {
                 variants.push(gen_attr(attr));
@@ -272,10 +270,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                     };
 
                     end_writer = quote! {
-                      if xmlns_prefix == #last_name_prefix {
-                        writer.write_str(#last_name_suffix_end_tag)?;
+                      if xmlns_prefix == #type_prefix {
+                        writer.write_str(#name_end_tag)?;
                       } else {
-                        writer.write_str(#last_name_end_tag)?;
+                        writer.write_str(#prefixed_name_end_tag)?;
                       }
                     };
                 } else {
@@ -297,10 +295,7 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 let mut child_stmt_list: Vec<Stmt> = vec![];
 
                 for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map
-                        .get(schema_type_particle.name.as_str())
-                        .ok_or(&schema_type_particle.name)
-                        .unwrap();
+                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
                     let child_name_ident = child.as_property_name_ident();
 
                     match schema_type_particle.as_occurrence() {
@@ -344,10 +339,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 };
 
                 end_writer = quote! {
-                  if xmlns_prefix == #last_name_prefix {
-                    writer.write_str(#last_name_suffix_end_tag)?;
+                  if xmlns_prefix == #type_prefix {
+                    writer.write_str(#name_end_tag)?;
                   } else {
-                    writer.write_str(#last_name_end_tag)?;
+                    writer.write_str(#prefixed_name_end_tag)?;
                   }
                 };
             } else {
@@ -364,10 +359,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 };
 
                 end_writer = quote! {
-                  if xmlns_prefix == #last_name_prefix {
-                    writer.write_str(#last_name_suffix_end_tag)?;
+                  if xmlns_prefix == #type_prefix {
+                    writer.write_str(#name_end_tag)?;
                   } else {
-                    writer.write_str(#last_name_end_tag)?;
+                    writer.write_str(#prefixed_name_end_tag)?;
                   }
                 };
             }
@@ -460,14 +455,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
 
                 self.write_xml(
                   &mut writer,
-                  if let Some(xmlns) = &self.xmlns {
-                    if xmlns == #xmlns_uri_str {
+                  if let Some(xmlns) = &self.xmlns && xmlns == #xmlns_uri_str {
                       #xmlns_prefix_str
-                    } else {
-                      ""
-                    }
                   } else {
-                    ""
+                      ""
                   },
                 )?;
 
@@ -500,10 +491,10 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
                 ) -> Result<(), std::fmt::Error> {
                   #xml_header_writer
 
-                  if xmlns_prefix == #last_name_prefix {
-                    writer.write_str(#last_name_suffix_start_tag)?;
+                  if xmlns_prefix == #type_prefix {
+                    writer.write_str(#name_start_tag)?;
                   } else {
-                    writer.write_str(#last_name_start_tag)?;
+                    writer.write_str(#prefixed_name_start_tag)?;
                   }
 
                   #( #xmlns_attr_writer_list )*
@@ -535,9 +526,9 @@ pub fn gen_serializer(schema: &OpenXmlSchema, gen_context: &GenContext) -> Token
         );
     }
 
-    quote! {
+    Ok(quote! {
       #( #token_stream_list )*
-    }
+    })
 }
 
 fn gen_attr(schema: &OpenXmlSchemaTypeAttribute) -> TokenStream {
