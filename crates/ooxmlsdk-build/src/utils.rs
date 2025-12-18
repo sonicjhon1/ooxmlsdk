@@ -60,8 +60,8 @@ impl<K: AsRef<str>, V> HashMapOpsError<K, V> for HashMap<String, V> {
     }
 }
 
-pub fn use_traits_fn() -> TokenStream {
+pub fn gen_use_common_glob() -> TokenStream {
     return quote! {
-        use crate::common::Deserializeable;
+        use crate::common::*;
     };
 }

@@ -8,14 +8,14 @@ use crate::{
     GenContext,
     error::{BuildError, BuildErrorReport},
     models::{Occurrence, OpenXmlPart},
-    utils::{HashMapOpsError, use_traits_fn},
+    utils::{HashMapOpsError, gen_use_common_glob},
 };
 
 pub fn gen_open_xml_parts(
     part: &OpenXmlPart,
     gen_context: &GenContext,
 ) -> Result<TokenStream, BuildErrorReport> {
-    let use_traits = use_traits_fn();
+    let use_common_glob = gen_use_common_glob();
 
     let relationship_type_str = &part.relationship_type;
     let relationship_type_stmt: Stmt = parse2(quote! {
@@ -46,7 +46,7 @@ pub fn gen_open_xml_parts(
         field_declaration_list.push(
             parse2(quote! {
               let content_types = crate::schemas::opc_content_types::Types::from_reader(
-                std::io::BufReader::new(archive.by_name("[Content_Types].xml").map_err(crate::common::SdkError::from)?,
+                std::io::BufReader::new(archive.by_name("[Content_Types].xml").map_err(SdkError::from)?,
               ))?;
             })
             .unwrap(),
@@ -87,7 +87,7 @@ pub fn gen_open_xml_parts(
               let part_target_str = if path.ends_with(".xml") {
                 &path[path
                   .rfind('/')
-                  .ok_or_else(|| crate::common::SdkError::CommonError(path.to_string()))?
+                  .ok_or_else(|| SdkError::CommonError(path.to_string()))?
                   + 1..path.len()]
               } else {
                 ""
@@ -98,7 +98,7 @@ pub fn gen_open_xml_parts(
 
         field_declaration_list.push(
             parse2(quote! {
-              let #part_rels_path_ident = crate::common::resolve_zip_file_path(
+              let #part_rels_path_ident = resolve_zip_file_path(
                 &format!("{child_parent_path}_rels/{part_target_str}.rels"),
               );
             })
@@ -111,7 +111,7 @@ pub fn gen_open_xml_parts(
                     rels_path = file_path.to_string();
 
                     Some(crate::schemas::opc_relationships::Relationships::from_reader(
-                        std::io::BufReader::new(archive.by_name(file_path).map_err(crate::common::SdkError::from)?)
+                        std::io::BufReader::new(archive.by_name(file_path).map_err(SdkError::from)?)
                     )?)
                 } else {
                   None
@@ -161,8 +161,8 @@ pub fn gen_open_xml_parts(
             field_declaration_list.push(
                 parse2(quote! {
                     {
-                        let mut file = std::io::BufReader::new(archive.by_name(path).map_err(crate::common::SdkError::from)?);
-                        file.read_to_string(&mut part_content).map_err(crate::common::SdkError::from)?;
+                        let mut file = std::io::BufReader::new(archive.by_name(path).map_err(SdkError::from)?);
+                        file.read_to_string(&mut part_content).map_err(SdkError::from)?;
                     }
                 })
                 .unwrap(),
@@ -193,11 +193,11 @@ pub fn gen_open_xml_parts(
             field_declaration_list.push(
                 parse2(quote! {
                     {
-                        let mut zip_entry = archive.by_name(path).map_err(crate::common::SdkError::from)?;
+                        let mut zip_entry = archive.by_name(path).map_err(SdkError::from)?;
 
                         part_content = Vec::with_capacity(zip_entry.size() as usize);
 
-                        zip_entry.read_to_end(&mut part_content).map_err(crate::common::SdkError::from)?;
+                        zip_entry.read_to_end(&mut part_content).map_err(SdkError::from)?;
                     }
                 })
                 .unwrap(),
@@ -211,18 +211,21 @@ pub fn gen_open_xml_parts(
             );
         }
         ("CoreFilePropertiesPart", _) => {
-            field_declaration_list.push(parse2(quote! {
-                let root_element = Some(
-                    crate::schemas::opc_core_properties::CoreProperties::from_reader(
-                        std::io::BufReader::new(archive.by_name(path).map_err(crate::common::SdkError::from)?)
-                    )?,
-                );
-            }).unwrap());
+            field_declaration_list.push(
+                parse2(quote! {
+                    let root_element = Some(
+                        crate::schemas::opc_core_properties::CoreProperties::from_reader(
+                            std::io::BufReader::new(archive.by_name(path).map_err(SdkError::from)?)
+                        )?,
+                    );
+                })
+                .unwrap(),
+            );
 
             field_unwrap_list.push(
                 parse2(quote! {
                     let root_element = root_element
-                        .ok_or_else(|| crate::common::SdkError::CommonError("root_element".to_string()))?;
+                        .ok_or_else(|| SdkError::CommonError("root_element".to_string()))?;
                 })
                 .unwrap(),
             );
@@ -249,16 +252,19 @@ pub fn gen_open_xml_parts(
                 ))
                 .unwrap();
 
-                field_declaration_list.push(parse2(quote! {
-                    let root_element = Some(#field_type::from_reader(
-                        std::io::BufReader::new(archive.by_name(path).map_err(crate::common::SdkError::from)?)
-                    )?);
-                }).unwrap());
+                field_declaration_list.push(
+                    parse2(quote! {
+                        let root_element = Some(#field_type::from_reader(
+                            std::io::BufReader::new(archive.by_name(path).map_err(SdkError::from)?)
+                        )?);
+                    })
+                    .unwrap(),
+                );
 
                 field_unwrap_list.push(
                     parse2(quote! {
                         let root_element = root_element
-                            .ok_or_else(|| crate::common::SdkError::CommonError("root_element".to_string()))?;
+                            .ok_or_else(|| SdkError::CommonError("root_element".to_string()))?;
                     })
                     .unwrap(),
                 );
@@ -310,7 +316,7 @@ pub fn gen_open_xml_parts(
             children_arm_list.push(
                 parse2(quote! {
                     #relationship_type_ty => {
-                        let target_path = crate::common::resolve_zip_file_path(
+                        let target_path = resolve_zip_file_path(
                             &format!("{}{}", child_parent_path, relationship.target),
                         );
 
@@ -338,7 +344,7 @@ pub fn gen_open_xml_parts(
             children_arm_list.push(
                 parse2(quote! {
                     #relationship_type_ty => {
-                        let target_path = crate::common::resolve_zip_file_path(
+                        let target_path = resolve_zip_file_path(
                             &format!("{}{}", child_parent_path, relationship.target),
                         );
 
@@ -358,7 +364,7 @@ pub fn gen_open_xml_parts(
                 field_unwrap_list.push(
                     parse2(quote! {
                         let #child_api_name_ident = #child_api_name_ident
-                            .ok_or_else(|| crate::common::SdkError::CommonError(#child_api_name_str.to_string()))?;
+                            .ok_or_else(|| SdkError::CommonError(#child_api_name_str.to_string()))?;
                     })
                     .unwrap(),
                 );
@@ -403,12 +409,12 @@ pub fn gen_open_xml_parts(
         let part_new_fn: ItemFn = parse2(quote! {
             pub fn new<R: std::io::Read + std::io::Seek>(
                 reader: R,
-            ) -> Result<Self, crate::common::SdkErrorReport> {
-                let mut archive = zip::ZipArchive::new(reader).map_err(crate::common::SdkError::from)?;
+            ) -> Result<Self, SdkErrorReport> {
+                let mut archive = zip::ZipArchive::new(reader).map_err(SdkError::from)?;
                 let mut file_path_set = std::collections::HashSet::with_capacity(archive.len());
 
                 for i in 0..archive.len() {
-                    let file = archive.by_index(i).map_err(crate::common::SdkError::from)?;
+                    let file = archive.by_index(i).map_err(SdkError::from)?;
                     if let Some(path) = file.enclosed_name() {
                         file_path_set.insert(path.to_string_lossy().into_owned());
                     }
@@ -420,14 +426,14 @@ pub fn gen_open_xml_parts(
         .unwrap();
 
         let part_new_from_file_fn: ItemFn = parse2(quote! {
-            pub fn new_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, crate::common::SdkErrorReport> {
-                Self::new(std::io::BufReader::new(std::fs::File::open(path).map_err(crate::common::SdkError::from)?))
+            pub fn new_from_file<P: AsRef<std::path::Path>>(path: P) -> Result<Self, SdkErrorReport> {
+                Self::new(std::io::BufReader::new(std::fs::File::open(path).map_err(SdkError::from)?))
             }
         })
         .unwrap();
 
         let part_save_fn: ItemFn = parse2(quote! {
-            pub fn save<W: std::io::Write + std::io::Seek>(&self, writer: W) -> Result<(), crate::common::SdkErrorReport> {
+            pub fn save<W: std::io::Write + std::io::Seek>(&self, writer: W) -> Result<(), SdkErrorReport> {
                 use std::io::Write;
 
                 let mut entry_set: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -438,15 +444,15 @@ pub fn gen_open_xml_parts(
                   .compression_method(zip::CompressionMethod::Deflated)
                   .unix_permissions(0o755);
 
-                zip.start_file("[Content_Types].xml", options).map_err(crate::common::SdkError::from)?;
+                zip.start_file("[Content_Types].xml", options).map_err(SdkError::from)?;
 
                 zip.write_all(
-                    self.content_types.to_xml().map_err(crate::common::SdkError::from)?.as_bytes()
-                ).map_err(crate::common::SdkError::from)?;
+                    self.content_types.to_xml().map_err(SdkError::from)?.as_bytes()
+                ).map_err(SdkError::from)?;
 
                 self.save_zip("", &mut zip, &mut entry_set)?;
 
-                zip.finish().map_err(crate::common::SdkError::from)?;
+                zip.finish().map_err(SdkError::from)?;
 
                 Ok(())
             }
@@ -454,8 +460,8 @@ pub fn gen_open_xml_parts(
         .unwrap();
 
         let part_save_to_file_fn: ItemFn = parse2(quote! {
-            pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), crate::common::SdkErrorReport> {
-                self.save(std::fs::File::create(path).map_err(crate::common::SdkError::from)?)
+            pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), SdkErrorReport> {
+                self.save(std::fs::File::create(path).map_err(SdkError::from)?)
             }
         })
         .unwrap();
@@ -486,7 +492,7 @@ pub fn gen_open_xml_parts(
     }.map_err(BuildError::from)?;
 
     Ok(quote! {
-        #use_traits
+        #use_common_glob
 
         #relationship_type_stmt
 
@@ -613,7 +619,7 @@ fn gen_from_archive_fn(
             r_id: &str,
             file_path_set: &std::collections::HashSet<String>,
             archive: &mut zip::ZipArchive<R>,
-        ) -> Result<Self, crate::common::SdkErrorReport> {
+        ) -> Result<Self, SdkErrorReport> {
             #( #field_declaration_list )*
 
             #children_stmt
@@ -648,20 +654,20 @@ fn gen_save_zip_fn(
                 .compression_method(zip::CompressionMethod::Deflated)
                 .unix_permissions(0o755);
 
-            let directory_path = crate::common::resolve_zip_file_path(parent_path);
+            let directory_path = resolve_zip_file_path(parent_path);
 
             if !directory_path.is_empty() && !entry_set.contains(&directory_path) {
-                zip.add_directory(&directory_path, options).map_err(crate::common::SdkError::from)?;
+                zip.add_directory(&directory_path, options).map_err(SdkError::from)?;
 
                 entry_set.insert(directory_path);
             }
 
-            let #part_name_dir_path_ident = crate::common::resolve_zip_file_path(
+            let #part_name_dir_path_ident = resolve_zip_file_path(
                 &format!("{}{}/", parent_path, #part_paths_general),
             );
 
             if !#part_name_dir_path_ident.is_empty() && !entry_set.contains(&#part_name_dir_path_ident) {
-                zip.add_directory(&#part_name_dir_path_ident, options).map_err(crate::common::SdkError::from)?;
+                zip.add_directory(&#part_name_dir_path_ident, options).map_err(SdkError::from)?;
 
                 entry_set.insert(#part_name_dir_path_ident);
             }
@@ -669,16 +675,20 @@ fn gen_save_zip_fn(
     );
 
     writer_list.push(
-        match (part_name_raw, !part.extension.is_empty(), gen_context
+        match (
+            part_name_raw,
+            !part.extension.is_empty(),
+            gen_context
                 .part_name_type_name_map
-                .contains_key(part_name_raw)) {
+                .contains_key(part_name_raw),
+        ) {
             ("CustomXmlPart" | "XmlSignaturePart", _, _) => quote! {
                 use std::io::Write;
 
                 if !entry_set.contains(&self.inner_path) {
-                    zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+                    zip.start_file(&self.inner_path, options).map_err(SdkError::from)?;
 
-                    zip.write_all(self.part_content.as_bytes()).map_err(crate::common::SdkError::from)?;
+                    zip.write_all(self.part_content.as_bytes()).map_err(SdkError::from)?;
 
                     entry_set.insert(self.inner_path.to_string());
                 }
@@ -687,9 +697,9 @@ fn gen_save_zip_fn(
                 use std::io::Write;
 
                 if !entry_set.contains(&self.inner_path) {
-                    zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+                    zip.start_file(&self.inner_path, options).map_err(SdkError::from)?;
 
-                    zip.write_all(&self.part_content).map_err(crate::common::SdkError::from)?;
+                    zip.write_all(&self.part_content).map_err(SdkError::from)?;
 
                     entry_set.insert(self.inner_path.to_string());
                 }
@@ -698,18 +708,18 @@ fn gen_save_zip_fn(
                 use std::io::Write;
 
                 if !entry_set.contains(&self.inner_path) {
-                    zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+                    zip.start_file(&self.inner_path, options).map_err(SdkError::from)?;
 
-                    zip.write_all(self.root_element.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
-                        .map_err(crate::common::SdkError::from)?;
+                    zip.write_all(self.root_element.to_xml().map_err(SdkError::from)?.as_bytes())
+                        .map_err(SdkError::from)?;
 
                     entry_set.insert(self.inner_path.to_string());
                 }
             },
-            _ if !part.children.is_empty() => quote!{
+            _ if !part.children.is_empty() => quote! {
                 use std::io::Write;
             },
-            _ => quote! {}
+            _ => quote! {},
         },
     );
 
@@ -718,21 +728,21 @@ fn gen_save_zip_fn(
             let child_parent_path = format!("{}{}", parent_path, #path_str);
 
             if let Some(relationships) = &self.relationships {
-                let rels_dir_path = crate::common::resolve_zip_file_path(
+                let rels_dir_path = resolve_zip_file_path(
                     &format!("{child_parent_path}_rels"),
                 );
 
                 if !rels_dir_path.is_empty() && !entry_set.contains(&rels_dir_path) {
-                    zip.add_directory(&rels_dir_path, options).map_err(crate::common::SdkError::from)?;
+                    zip.add_directory(&rels_dir_path, options).map_err(SdkError::from)?;
 
                     entry_set.insert(rels_dir_path);
                 }
 
                 if !entry_set.contains(&self.rels_path) {
-                    zip.start_file(&self.rels_path, options).map_err(crate::common::SdkError::from)?;
+                    zip.start_file(&self.rels_path, options).map_err(SdkError::from)?;
 
-                    zip.write_all(relationships.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
-                    .map_err(crate::common::SdkError::from)?;
+                    zip.write_all(relationships.to_xml().map_err(SdkError::from)?.as_bytes())
+                    .map_err(SdkError::from)?;
 
                     entry_set.insert(self.rels_path.to_string());
                 }
@@ -779,7 +789,7 @@ fn gen_save_zip_fn(
             parent_path: &str,
             zip: &mut zip::ZipWriter<W>,
             entry_set: &mut std::collections::HashSet<String>,
-        ) -> Result<(), crate::common::SdkErrorReport> {
+        ) -> Result<(), SdkErrorReport> {
             #( #writer_list )*
 
             #( #children_writer_stmt_list )*
