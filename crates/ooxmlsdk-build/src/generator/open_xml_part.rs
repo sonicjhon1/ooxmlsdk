@@ -7,7 +7,7 @@ use syn::{Arm, FieldValue, Ident, ItemFn, ItemImpl, ItemStruct, Stmt, Type, pars
 use crate::{
     GenContext,
     error::{BuildError, BuildErrorReport},
-    models::OpenXmlPart,
+    models::{Occurrence, OpenXmlPart},
     utils::{HashMapOpsError, use_traits_fn},
 };
 
@@ -15,123 +15,28 @@ pub fn gen_open_xml_parts(
     part: &OpenXmlPart,
     gen_context: &GenContext,
 ) -> Result<TokenStream, BuildErrorReport> {
-    let relationship_type_str = &part.relationship_type;
+    let use_traits = use_traits_fn()?;
 
+    let relationship_type_str = &part.relationship_type;
     let relationship_type_stmt: Stmt = parse2(quote! {
         pub const RELATIONSHIP_TYPE: &str = #relationship_type_str;
     })
     .unwrap();
 
-    let use_traits = use_traits_fn()?;
-
-    let struct_name_ident: Ident = parse_str(&part.name.to_upper_camel_case()).unwrap();
-
-    let mut fields: Vec<TokenStream> = vec![];
-
-    if part.base == "OpenXmlPackage" {
-        fields.push(quote! {
-            pub content_types: crate::schemas::opc_content_types::Types,
-        });
-    } else {
-        fields.push(quote! {
-            pub r_id: String,
-        });
-    }
-
-    if !part.children.is_empty() {
-        fields.push(quote! {
-            pub relationships: Option<crate::schemas::opc_relationships::Relationships>,
-        });
-
-        fields.push(quote! {
-            pub rels_path: String,
-        });
-    }
-
-    fields.push(quote! {
-        pub inner_path: String,
-    });
-
-    if part.name == "CustomXmlPart" || part.name == "XmlSignaturePart" {
-        fields.push(quote! {
-            pub part_content: String,
-        });
-    } else if !part.extension.is_empty()
-        || part.name == "CustomDataPart"
-        || part.name == "InternationalMacroSheetPart"
-    {
-        fields.push(quote! {
-            pub part_content: Vec<u8>,
-        });
-    } else if part.name == "CoreFilePropertiesPart" {
-        fields.push(quote! {
-            pub root_element: crate::schemas::opc_core_properties::CoreProperties,
-        });
-    } else if let Some(root_element_type_name) =
-        gen_context.part_name_type_name_map.get(part.name.as_str())
-    {
-        let root_element_type = gen_context
-            .type_name_type_map
-            .try_get(root_element_type_name)?;
-
-        let field_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            root_element_type.module_name,
-            root_element_type.class_name.to_upper_camel_case()
-        ))
-        .unwrap();
-
-        fields.push(quote! {
-          pub root_element: #field_type,
-        });
-    }
-
-    for child in &part.children {
-        if child.is_data_part_reference {
-            continue;
-        }
-
-        let child_name_ident: Ident = parse_str(&child.api_name.to_snake_case()).unwrap();
-
-        let child_type: Type = parse_str(&format!(
-            "crate::parts::{}::{}",
-            child.name.to_snake_case(),
-            child.name.to_upper_camel_case(),
-        ))
-        .unwrap();
-
-        match child.as_occurrence() {
-            crate::models::Occurrence::Required => fields.push(quote! {
-              pub #child_name_ident: std::boxed::Box<#child_type>,
-            }),
-            crate::models::Occurrence::Optional => fields.push(quote! {
-              pub #child_name_ident: Option<std::boxed::Box<#child_type>>,
-            }),
-            crate::models::Occurrence::Repeated => fields.push(quote! {
-              pub #child_name_ident: Vec<#child_type>,
-            }),
-        };
-    }
-
-    let part_struct: ItemStruct = parse2(quote! {
-      #[derive(Clone, Debug, Default)]
-      pub struct #struct_name_ident {
-        #( #fields )*
-      }
-    })
-    .unwrap();
-
-    let mut field_declaration_list: Vec<Stmt> = vec![];
-    let mut field_unwrap_list: Vec<Stmt> = vec![];
-    let mut self_field_value_list: Vec<FieldValue> = vec![];
-    let mut children_stmt: Option<Stmt> = None;
-    let mut children_arm_list: Vec<Arm> = vec![];
+    let part_struct_name_ident: Ident = parse_str(&part.name.to_upper_camel_case()).unwrap();
+    let part_struct = gen_struct_fn(part, gen_context, &part_struct_name_ident)?;
 
     let path_str = if part.paths.general.is_empty() {
         ""
     } else {
         &format!("{}/", part.paths.general)
     };
+
+    let mut field_declaration_list: Vec<Stmt> = vec![];
+    let mut field_unwrap_list: Vec<Stmt> = vec![];
+    let mut self_field_value_list: Vec<FieldValue> = vec![];
+    let mut children_stmt: Option<Stmt> = None;
+    let mut children_arm_list: Vec<Arm> = vec![];
 
     let part_rels_path_ident: Ident =
         parse_str(&format!("{}_rels_path", part.name.to_snake_case())).unwrap();
@@ -464,211 +369,15 @@ pub fn gen_open_xml_parts(
     }
 
     if !part.children.is_empty() {
-        children_arm_list.push(
-            parse2(quote! {
-              _ => ()
-            })
-            .unwrap(),
-        );
-
         children_stmt = Some(
             parse2(quote! {
-              if let Some(relationships) = &relationships {
-                for relationship in &relationships.relationship {
-                  #[allow(clippy::single_match)]
-                  match relationship.r#type.as_str() {
-                    #( #children_arm_list, )*
-                  }
-                }
-              }
-            })
-            .unwrap(),
-        );
-    }
-
-    let part_new_from_archive_fn: ItemFn = parse2(quote! {
-        #[allow(unused_variables)]
-        pub(crate) fn new_from_archive<R: std::io::Read + std::io::Seek>(
-            parent_path: &str,
-            path: &str,
-            r_id: &str,
-            file_path_set: &std::collections::HashSet<String>,
-            archive: &mut zip::ZipArchive<R>,
-        ) -> Result<Self, crate::common::SdkErrorReport> {
-            #( #field_declaration_list )*
-
-            #children_stmt
-
-            #( #field_unwrap_list )*
-
-            Ok(Self {
-                #( #self_field_value_list, )*
-            })
-        }
-    })
-    .unwrap();
-
-    let mut writer_stmt_list: Vec<Stmt> = vec![];
-
-    let mut children_writer_stmt_list: Vec<Stmt> = vec![];
-
-    let part_paths_general = &part.paths.general;
-
-    let part_name_dir_path_ident: Ident =
-        parse_str(&format!("{}_dir_path", part.name).to_snake_case()).unwrap();
-
-    writer_stmt_list.push(
-        parse2(quote! {
-          let options = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated)
-            .unix_permissions(0o755);
-        })
-        .unwrap(),
-    );
-
-    writer_stmt_list.push(
-        parse2(quote! {
-          let directory_path = crate::common::resolve_zip_file_path(parent_path);
-        })
-        .unwrap(),
-    );
-
-    writer_stmt_list.push(
-        parse2(quote! {
-          if !directory_path.is_empty() && !entry_set.contains(&directory_path) {
-            zip.add_directory(&directory_path, options).map_err(crate::common::SdkError::from)?;
-
-            entry_set.insert(directory_path);
-          }
-        })
-        .unwrap(),
-    );
-
-    writer_stmt_list.push(
-        parse2(quote! {
-          let #part_name_dir_path_ident = crate::common::resolve_zip_file_path(
-            &format!("{}{}/", parent_path, #part_paths_general),
-          );
-        })
-        .unwrap(),
-    );
-
-    writer_stmt_list.push(
-    parse2(quote! {
-      if !#part_name_dir_path_ident.is_empty() && !entry_set.contains(&#part_name_dir_path_ident) {
-        zip.add_directory(&#part_name_dir_path_ident, options).map_err(crate::common::SdkError::from)?;
-
-        entry_set.insert(#part_name_dir_path_ident);
-      }
-    })
-    .unwrap(),
-  );
-
-    if part.name == "CustomXmlPart" || part.name == "XmlSignaturePart" {
-        writer_stmt_list.push(
-            parse2(quote! {
-              use std::io::Write;
-            })
-            .unwrap(),
-        );
-
-        writer_stmt_list.push(
-            parse2(quote! {
-              if !entry_set.contains(&self.inner_path) {
-                zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
-
-                zip.write_all(self.part_content.as_bytes()).map_err(crate::common::SdkError::from)?;
-
-                entry_set.insert(self.inner_path.to_string());
-              }
-            })
-            .unwrap(),
-        );
-    } else if !part.extension.is_empty()
-        || part.name == "CustomDataPart"
-        || part.name == "InternationalMacroSheetPart"
-    {
-        writer_stmt_list.push(
-            parse2(quote! {
-              use std::io::Write;
-            })
-            .unwrap(),
-        );
-
-        writer_stmt_list.push(
-            parse2(quote! {
-              if !entry_set.contains(&self.inner_path) {
-                zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
-
-                zip.write_all(&self.part_content).map_err(crate::common::SdkError::from)?;
-
-                entry_set.insert(self.inner_path.to_string());
-              }
-            })
-            .unwrap(),
-        );
-    } else if part.name == "CoreFilePropertiesPart"
-        || gen_context
-            .part_name_type_name_map
-            .contains_key(part.name.as_str())
-    {
-        writer_stmt_list.push(
-            parse2(quote! {
-              use std::io::Write;
-            })
-            .unwrap(),
-        );
-
-        writer_stmt_list.push(
-            parse2(quote! {
-              if !entry_set.contains(&self.inner_path) {
-                zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
-
-                zip.write_all(self.root_element.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
-                    .map_err(crate::common::SdkError::from)?;
-
-                entry_set.insert(self.inner_path.to_string());
-              }
-            })
-            .unwrap(),
-        );
-    } else if !part.children.is_empty() {
-        writer_stmt_list.push(
-            parse2(quote! {
-              use std::io::Write;
-            })
-            .unwrap(),
-        );
-    }
-
-    if !part.children.is_empty() {
-        writer_stmt_list.push(
-            parse2(quote! {
-              let child_parent_path = format!("{}{}", parent_path, #path_str);
-            })
-            .unwrap(),
-        );
-
-        writer_stmt_list.push(
-            parse2(quote! {
-                if let Some(relationships) = &self.relationships {
-                    let rels_dir_path = crate::common::resolve_zip_file_path(
-                        &format!("{child_parent_path}_rels"),
-                    );
-
-                    if !rels_dir_path.is_empty() && !entry_set.contains(&rels_dir_path) {
-                        zip.add_directory(&rels_dir_path, options).map_err(crate::common::SdkError::from)?;
-
-                        entry_set.insert(rels_dir_path);
-                    }
-
-                    if !entry_set.contains(&self.rels_path) {
-                        zip.start_file(&self.rels_path, options).map_err(crate::common::SdkError::from)?;
-
-                        zip.write_all(relationships.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
-                            .map_err(crate::common::SdkError::from)?;
-
-                        entry_set.insert(self.rels_path.to_string());
+                if let Some(relationships) = &relationships {
+                    for relationship in &relationships.relationship {
+                        #[allow(clippy::single_match)]
+                        match relationship.r#type.as_str() {
+                            #( #children_arm_list, )*
+                            _ => ()
+                        }
                     }
                 }
             })
@@ -676,58 +385,14 @@ pub fn gen_open_xml_parts(
         );
     }
 
-    for child in &part.children {
-        if child.is_data_part_reference {
-            continue;
-        }
+    let part_new_from_archive_fn = gen_from_archive_fn(
+        field_declaration_list,
+        children_stmt,
+        field_unwrap_list,
+        self_field_value_list,
+    )?;
 
-        let child_api_name_ident: Ident = parse_str(&child.api_name.to_snake_case()).unwrap();
-
-        let child_name_ident: Ident = parse_str(&child.name.to_snake_case()).unwrap();
-
-        if child.max_occurs_great_than_one {
-            children_writer_stmt_list.push(
-                parse2(quote! {
-                  for #child_name_ident in &self.#child_api_name_ident {
-                    #child_name_ident.save_zip(&child_parent_path, zip, entry_set)?;
-                  }
-                })
-                .unwrap(),
-            );
-        } else if child.min_occurs_is_non_zero {
-            children_writer_stmt_list.push(
-                parse2(quote! {
-                  self.#child_api_name_ident.save_zip(&child_parent_path, zip, entry_set)?;
-                })
-                .unwrap(),
-            );
-        } else {
-            children_writer_stmt_list.push(
-                parse2(quote! {
-                  if let Some(#child_api_name_ident) = &self.#child_api_name_ident {
-                    #child_api_name_ident.save_zip(&child_parent_path, zip, entry_set)?;
-                  }
-                })
-                .unwrap(),
-            );
-        }
-    }
-
-    let part_save_zip_fn: ItemFn = parse2(quote! {
-        pub(crate) fn save_zip<W: std::io::Write + std::io::Seek>(
-            &self,
-            parent_path: &str,
-            zip: &mut zip::ZipWriter<W>,
-            entry_set: &mut std::collections::HashSet<String>,
-        ) -> Result<(), crate::common::SdkErrorReport> {
-            #( #writer_stmt_list )*
-
-            #( #children_writer_stmt_list )*
-
-            Ok(())
-        }
-    })
-    .unwrap();
+    let part_save_zip_fn = gen_save_zip_fn(part, gen_context, path_str)?;
 
     let part_impl: ItemImpl = if part.base == "OpenXmlPackage" {
         let part_new_fn: ItemFn = parse2(quote! {
@@ -791,7 +456,7 @@ pub fn gen_open_xml_parts(
         .unwrap();
 
         parse2(quote! {
-            impl #struct_name_ident {
+            impl #part_struct_name_ident {
                 #part_new_fn
 
                 #part_new_from_file_fn
@@ -807,13 +472,13 @@ pub fn gen_open_xml_parts(
         })
     } else {
         parse2(quote! {
-            impl #struct_name_ident {
+            impl #part_struct_name_ident {
                 #part_new_from_archive_fn
 
                 #part_save_zip_fn
             }
         })
-    }.context_transform(BuildError::from)?;
+    }.map_err(BuildError::from)?;
 
     Ok(quote! {
         #use_traits
@@ -824,4 +489,300 @@ pub fn gen_open_xml_parts(
 
         #part_impl
     })
+}
+
+fn gen_struct_fn(
+    part: &OpenXmlPart,
+    gen_context: &GenContext,
+    struct_name_ident: &Ident,
+) -> Result<ItemStruct, BuildErrorReport> {
+    let mut fields: Vec<TokenStream> = vec![];
+
+    if part.base == "OpenXmlPackage" {
+        fields.push(quote! {
+            pub content_types: crate::schemas::opc_content_types::Types,
+        });
+    } else {
+        fields.push(quote! {
+            pub r_id: String,
+        });
+    }
+
+    if !part.children.is_empty() {
+        fields.push(quote! {
+            pub relationships: Option<crate::schemas::opc_relationships::Relationships>,
+        });
+
+        fields.push(quote! {
+            pub rels_path: String,
+        });
+    }
+
+    fields.push(quote! {
+        pub inner_path: String,
+    });
+
+    if part.name == "CustomXmlPart" || part.name == "XmlSignaturePart" {
+        fields.push(quote! {
+            pub part_content: String,
+        });
+    } else if !part.extension.is_empty()
+        || part.name == "CustomDataPart"
+        || part.name == "InternationalMacroSheetPart"
+    {
+        fields.push(quote! {
+            pub part_content: Vec<u8>,
+        });
+    } else if part.name == "CoreFilePropertiesPart" {
+        fields.push(quote! {
+            pub root_element: crate::schemas::opc_core_properties::CoreProperties,
+        });
+    } else if let Some(root_element_type_name) =
+        gen_context.part_name_type_name_map.get(part.name.as_str())
+    {
+        let root_element_type = gen_context
+            .type_name_type_map
+            .try_get(root_element_type_name)?;
+
+        let field_type: Type = parse_str(&format!(
+            "crate::schemas::{}::{}",
+            root_element_type.module_name,
+            root_element_type.class_name.to_upper_camel_case()
+        ))
+        .unwrap();
+
+        fields.push(quote! {
+          pub root_element: #field_type,
+        });
+    }
+
+    for child in &part.children {
+        if child.is_data_part_reference {
+            continue;
+        }
+
+        let child_name_ident: Ident = parse_str(&child.api_name.to_snake_case()).unwrap();
+
+        let child_type: Type = parse_str(&format!(
+            "crate::parts::{}::{}",
+            child.name.to_snake_case(),
+            child.name.to_upper_camel_case(),
+        ))
+        .unwrap();
+
+        match child.as_occurrence() {
+            Occurrence::Required => fields.push(quote! {
+              pub #child_name_ident: std::boxed::Box<#child_type>,
+            }),
+            Occurrence::Optional => fields.push(quote! {
+              pub #child_name_ident: Option<std::boxed::Box<#child_type>>,
+            }),
+            Occurrence::Repeated => fields.push(quote! {
+              pub #child_name_ident: Vec<#child_type>,
+            }),
+        };
+    }
+
+    parse2(quote! {
+        #[derive(Clone, Debug, Default)]
+        pub struct #struct_name_ident {
+            #( #fields )*
+        }
+    })
+    .context_transform(BuildError::from)
+}
+
+fn gen_from_archive_fn(
+    field_declaration_list: Vec<Stmt>,
+    children_stmt: Option<Stmt>,
+    field_unwrap_list: Vec<Stmt>,
+    self_field_value_list: Vec<FieldValue>,
+) -> Result<ItemFn, BuildErrorReport> {
+    parse2(quote! {
+        #[allow(unused_variables)]
+        pub(crate) fn new_from_archive<R: std::io::Read + std::io::Seek>(
+            parent_path: &str,
+            path: &str,
+            r_id: &str,
+            file_path_set: &std::collections::HashSet<String>,
+            archive: &mut zip::ZipArchive<R>,
+        ) -> Result<Self, crate::common::SdkErrorReport> {
+            #( #field_declaration_list )*
+
+            #children_stmt
+
+            #( #field_unwrap_list )*
+
+            Ok(Self {
+                #( #self_field_value_list, )*
+            })
+        }
+    })
+    .context_transform(BuildError::from)
+}
+
+fn gen_save_zip_fn(
+    part: &OpenXmlPart,
+    gen_context: &GenContext,
+    path_str: &str,
+) -> Result<ItemFn, BuildErrorReport> {
+    let part_paths_general = &part.paths.general;
+
+    let part_name_raw = part.name.as_str();
+    let part_name_dir_path_ident: Ident =
+        parse_str(&format!("{part_name_raw}_dir_path").to_snake_case())
+            .context_transform(BuildError::from)?;
+
+    let mut writer_stmt_list: Vec<Stmt> = vec![];
+
+    writer_stmt_list.push(
+        parse2(quote! {
+            use std::io::Write;
+
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(0o755);
+
+            let directory_path = crate::common::resolve_zip_file_path(parent_path);
+
+            if !directory_path.is_empty() && !entry_set.contains(&directory_path) {
+                zip.add_directory(&directory_path, options).map_err(crate::common::SdkError::from)?;
+
+                entry_set.insert(directory_path);
+            }
+
+            let #part_name_dir_path_ident = crate::common::resolve_zip_file_path(
+                &format!("{}{}/", parent_path, #part_paths_general),
+            );
+
+            if !#part_name_dir_path_ident.is_empty() && !entry_set.contains(&#part_name_dir_path_ident) {
+                zip.add_directory(&#part_name_dir_path_ident, options).map_err(crate::common::SdkError::from)?;
+
+                entry_set.insert(#part_name_dir_path_ident);
+            }
+        })
+        .context_transform(BuildError::from)?,
+    );
+
+    writer_stmt_list.push(
+        parse2(match part_name_raw {
+            "CustomXmlPart" | "XmlSignaturePart" => {
+                quote! {
+                    if !entry_set.contains(&self.inner_path) {
+                        zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+
+                        zip.write_all(self.part_content.as_bytes()).map_err(crate::common::SdkError::from)?;
+
+                        entry_set.insert(self.inner_path.to_string());
+                    }
+                }
+            },
+            "CustomDataPart" | "InternationalMacroSheetPart" if !part.extension.is_empty() => {
+                quote! {
+                    if !entry_set.contains(&self.inner_path) {
+                        zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+
+                        zip.write_all(&self.part_content).map_err(crate::common::SdkError::from)?;
+
+                        entry_set.insert(self.inner_path.to_string());
+                    }
+                }
+            },
+            "CoreFilePropertiesPart"
+                if gen_context
+                    .part_name_type_name_map
+                    .contains_key(part_name_raw) =>
+            {
+                quote! {
+                    if !entry_set.contains(&self.inner_path) {
+                        zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+
+                        zip.write_all(self.root_element.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
+                            .map_err(crate::common::SdkError::from)?;
+
+                        entry_set.insert(self.inner_path.to_string());
+                    }
+                }
+            },
+            _ if !part.children.is_empty() => {
+                quote! {
+                    let child_parent_path = format!("{}{}", parent_path, #path_str);
+
+                    if let Some(relationships) = &self.relationships {
+                        let rels_dir_path = crate::common::resolve_zip_file_path(
+                            &format!("{child_parent_path}_rels"),
+                        );
+
+                        if !rels_dir_path.is_empty() && !entry_set.contains(&rels_dir_path) {
+                            zip.add_directory(&rels_dir_path, options).map_err(crate::common::SdkError::from)?;
+
+                            entry_set.insert(rels_dir_path);
+                        }
+
+                        if !entry_set.contains(&self.rels_path) {
+                            zip.start_file(&self.rels_path, options).map_err(crate::common::SdkError::from)?;
+
+                            zip.write_all(relationships.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
+                                .map_err(crate::common::SdkError::from)?;
+
+                            entry_set.insert(self.rels_path.to_string());
+                        }
+                    }
+                }
+            },
+            _ => {
+                quote! {}
+            }
+        })
+        .context_transform(BuildError::from)?,
+    );
+
+    let mut children_writer_stmt_list: Vec<Stmt> = vec![];
+    for child in &part.children {
+        if child.is_data_part_reference {
+            continue;
+        }
+
+        let child_api_name_ident: Ident =
+            parse_str(&child.api_name.to_snake_case()).context_transform(BuildError::from)?;
+
+        let tokens = match child.as_occurrence() {
+            Occurrence::Required => {
+                let child_name_ident: Ident =
+                    parse_str(&child.name.to_snake_case()).context_transform(BuildError::from)?;
+
+                quote! {
+                    for #child_name_ident in &self.#child_api_name_ident {
+                        #child_name_ident.save_zip(&child_parent_path, zip, entry_set)?;
+                    }
+                }
+            }
+            Occurrence::Optional => quote! {
+                self.#child_api_name_ident.save_zip(&child_parent_path, zip, entry_set)?;
+            },
+            Occurrence::Repeated => quote! {
+                if let Some(#child_api_name_ident) = &self.#child_api_name_ident {
+                    #child_api_name_ident.save_zip(&child_parent_path, zip, entry_set)?;
+                }
+            },
+        };
+
+        children_writer_stmt_list.push(parse2(tokens).map_err(BuildError::from)?);
+    }
+
+    parse2(quote! {
+        pub(crate) fn save_zip<W: std::io::Write + std::io::Seek>(
+            &self,
+            parent_path: &str,
+            zip: &mut zip::ZipWriter<W>,
+            entry_set: &mut std::collections::HashSet<String>,
+        ) -> Result<(), crate::common::SdkErrorReport> {
+            #( #writer_stmt_list )*
+
+            #( #children_writer_stmt_list )*
+
+            Ok(())
+        }
+    })
+    .context_transform(BuildError::from)
 }
