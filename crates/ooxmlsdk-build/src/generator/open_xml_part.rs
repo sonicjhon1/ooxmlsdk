@@ -85,10 +85,10 @@ pub fn gen_open_xml_parts(
         field_declaration_list.push(
             parse2(quote! {
               let part_target_str = if path.ends_with(".xml") {
-                &path[path
-                  .rfind('/')
+                &path
+                  .rsplit_once('/')
                   .ok_or_else(|| SdkError::CommonError(path.to_string()))?
-                  + 1..path.len()]
+                  .1
               } else {
                 ""
               };
