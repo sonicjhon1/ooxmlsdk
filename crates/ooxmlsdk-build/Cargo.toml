@@ -45,7 +45,7 @@ zip = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-tempfile = "3.23"
+tempfile = { workspace = true }
 
 [[bench]]
 name = "serde_bench"
