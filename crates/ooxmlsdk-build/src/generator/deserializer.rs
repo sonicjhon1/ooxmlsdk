@@ -90,8 +90,6 @@ pub fn gen_deserializers(
         );
     }
 
-    let from_reader_fn = gen_from_reader_fn();
-
     for schema_type in &schema.types {
         if schema_type.is_abstract {
             continue;
@@ -104,8 +102,6 @@ pub fn gen_deserializers(
             &schema.module_name
         ))
         .unwrap();
-
-        token_stream_list.push(gen_from_str_impl(&struct_type));
 
         let (type_base_class, type_prefixed_name) = schema_type.split_name();
         let (_, type_name_str) = schema_type.split_last_name();
@@ -550,8 +546,8 @@ pub fn gen_deserializers(
         }
 
         let deserialize_inner_fn: ItemFn = parse2(quote! {
-          pub(crate) fn deserialize_inner<'de, R: crate::common::XmlReader<'de>>(
-            xml_reader: &mut R,
+          fn deserialize_inner<'de>(
+            xml_reader: &mut impl crate::common::XmlReader<'de>,
             xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
           ) -> Result<Self, crate::common::SdkErrorReport> {
             #expect_event_start_stmt
@@ -591,9 +587,7 @@ pub fn gen_deserializers(
 
         token_stream_list.push(
             parse2(quote! {
-              impl #struct_type {
-                #from_reader_fn
-
+              impl crate::common::Deserializeable for #struct_type {
                 #deserialize_inner_fn
               }
             })
@@ -604,31 +598,6 @@ pub fn gen_deserializers(
     Ok(quote! {
       #( #token_stream_list )*
     })
-}
-
-fn gen_from_str_impl(struct_type: &Type) -> ItemImpl {
-    return parse2(quote! {
-      impl std::str::FromStr for #struct_type {
-        type Err = crate::common::SdkErrorReport;
-
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-          let mut xml_reader = crate::common::from_str_inner(s)?;
-
-          Self::deserialize_inner(&mut xml_reader, None)
-        }
-      }
-    })
-    .unwrap();
-}
-
-fn gen_from_reader_fn() -> ItemFn {
-    return parse2(quote! {
-        pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, crate::common::SdkErrorReport> {
-            let mut xml_reader = crate::common::from_reader_inner(reader)?;
-
-            Self::deserialize_inner(&mut xml_reader, None)
-        }
-    }).unwrap();
 }
 
 fn gen_one_sequence_match_arm(

@@ -1,3 +1,5 @@
+use quick_xml::events::BytesStart;
+
 use super::super::common::*;
 
 #[derive(Clone, Debug, Default)]
@@ -8,26 +10,10 @@ pub struct Relationships {
     pub relationship: Vec<Relationship>,
 }
 
-impl std::str::FromStr for Relationships {
-    type Err = SdkErrorReport;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut xml_reader = from_str_inner(s)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-}
-
-impl Relationships {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_reader_inner(reader)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub fn deserialize_inner<'de, R: XmlReader<'de>>(
-        xml_reader: &mut R,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
+impl Deserializeable for Relationships {
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) =
             expect_event_start(xml_reader, xml_event, b"w:Relationships", b"Relationships")?;
@@ -72,7 +58,7 @@ impl Relationships {
 
         if !empty_tag {
             loop {
-                let mut e_opt: Option<quick_xml::events::BytesStart<'_>> = None;
+                let mut e_opt: Option<BytesStart<'_>> = None;
                 let mut e_empty = false;
 
                 match xml_reader.next()? {
@@ -192,23 +178,10 @@ pub struct Relationship {
     pub id: String,
 }
 
-impl Relationship {
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_str_inner(s)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_reader_inner(reader)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub fn deserialize_inner<'de, R: XmlReader<'de>>(
-        xml_reader: &mut R,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
+impl Deserializeable for Relationship {
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Relationship", b"Relationship")?;
 
@@ -329,21 +302,20 @@ pub enum TargetMode {
 
 impl TargetMode {
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Result<Self, SdkErrorReport> {
-        match s {
+    pub fn from_str(s: impl AsRef<str>) -> Result<Self, SdkErrorReport> {
+        match s.as_ref() {
             "External" => Ok(Self::External),
             "Internal" => Ok(Self::Internal),
-            _ => Err(SdkError::CommonError(s.to_string()))?,
+            _ => Err(SdkError::CommonError(s.as_ref().to_string()))?,
         }
     }
 }
 
-impl TargetMode {
-    #[allow(clippy::inherent_to_string)]
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for TargetMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::External => "External".to_string(),
-            Self::Internal => "Internal".to_string(),
+            TargetMode::External => write!(f, "External"),
+            TargetMode::Internal => write!(f, "Internal"),
         }
     }
 }

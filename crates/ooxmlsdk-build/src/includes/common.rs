@@ -3,7 +3,7 @@ use quick_xml::{
     events::{BytesStart, Event},
 };
 use rootcause::prelude::*;
-use std::io::BufRead;
+use std::{io::BufRead, path::Path};
 use thiserror::Error;
 use tracing::*;
 
@@ -37,8 +37,7 @@ pub enum SdkError {
 }
 
 pub trait XmlReader<'de> {
-    fn next(&mut self) -> Result<Event<'de>, SdkError>;
-
+    fn next(&mut self) -> Result<Event<'de>, SdkErrorReport>;
     fn decoder(&self) -> Decoder;
 }
 
@@ -48,20 +47,25 @@ pub struct IoReader<R: BufRead> {
 }
 
 impl<R: BufRead> IoReader<R> {
+    #[inline]
     pub fn new(reader: Reader<R>) -> Self {
         Self {
             reader,
-            buf: Vec::new(),
+            buf: vec![],
         }
     }
 }
 
 impl<'de, R: BufRead> XmlReader<'de> for IoReader<R> {
     #[inline]
-    fn next(&mut self) -> Result<Event<'de>, SdkError> {
+    fn next(&mut self) -> Result<Event<'de>, SdkErrorReport> {
         self.buf.clear();
 
-        Ok(self.reader.read_event_into(&mut self.buf)?.into_owned())
+        Ok(self
+            .reader
+            .read_event_into(&mut self.buf)
+            .map_err(SdkError::from)?
+            .into_owned())
     }
 
     #[inline]
@@ -73,15 +77,46 @@ pub struct SliceReader<'de> {
 }
 
 impl<'de> SliceReader<'de> {
+    #[inline]
     pub fn new(reader: Reader<&'de [u8]>) -> Self { Self { reader } }
 }
 
 impl<'de> XmlReader<'de> for SliceReader<'de> {
     #[inline]
-    fn next(&mut self) -> Result<Event<'de>, SdkError> { Ok(self.reader.read_event()?) }
+    fn next(&mut self) -> Result<Event<'de>, SdkErrorReport> {
+        Ok(self.reader.read_event().map_err(SdkError::from)?)
+    }
 
     #[inline]
     fn decoder(&self) -> Decoder { self.reader.decoder() }
+}
+
+pub trait Deserializeable: Sized {
+    fn from_str(str: impl AsRef<str>) -> Result<Self, SdkErrorReport> {
+        let mut xml_reader = quick_xml::Reader::from_str(str.as_ref());
+        xml_reader.config_mut().check_end_names = false;
+
+        Self::deserialize_inner(&mut SliceReader::new(xml_reader), None)
+    }
+
+    fn from_reader(reader: impl BufRead) -> Result<Self, SdkErrorReport> {
+        let mut xml_reader = quick_xml::Reader::from_reader(reader);
+        xml_reader.config_mut().check_end_names = false;
+
+        Self::deserialize_inner(&mut IoReader::new(xml_reader), None)
+    }
+
+    fn from_file(path: impl AsRef<Path>) -> Result<Self, SdkErrorReport> {
+        let mut xml_reader = quick_xml::Reader::from_file(path).map_err(SdkError::from)?;
+        xml_reader.config_mut().check_end_names = false;
+
+        Self::deserialize_inner(&mut IoReader::new(xml_reader), None)
+    }
+
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
+    ) -> Result<Self, SdkErrorReport>;
 }
 
 pub fn resolve_zip_file_path(path: &str) -> String {
@@ -104,22 +139,6 @@ pub fn resolve_zip_file_path(path: &str) -> String {
     }
     // Join the components back into a path
     stack.join("/")
-}
-
-#[inline]
-pub(crate) fn from_reader_inner<R: BufRead>(reader: R) -> Result<IoReader<R>, SdkErrorReport> {
-    let mut xml_reader = quick_xml::Reader::from_reader(reader);
-    xml_reader.config_mut().check_end_names = false;
-
-    Ok(IoReader::new(xml_reader))
-}
-
-#[inline]
-pub(crate) fn from_str_inner(s: &str) -> Result<SliceReader<'_>, SdkErrorReport> {
-    let mut xml_reader = quick_xml::Reader::from_str(s);
-    xml_reader.config_mut().check_end_names = false;
-
-    Ok(SliceReader::new(xml_reader))
 }
 
 #[inline]

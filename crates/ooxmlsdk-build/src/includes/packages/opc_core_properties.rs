@@ -1,3 +1,4 @@
+use quick_xml::events::BytesStart;
 use super::super::common::*;
 
 #[derive(Clone, Debug, Default)]
@@ -22,26 +23,10 @@ pub struct CoreProperties {
     pub version: Option<String>,
 }
 
-impl std::str::FromStr for CoreProperties {
-    type Err = SdkErrorReport;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut xml_reader = from_str_inner(s)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-}
-
-impl CoreProperties {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_reader_inner(reader)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub fn deserialize_inner<'de, R: XmlReader<'de>>(
-        xml_reader: &mut R,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
+impl Deserializeable for CoreProperties {
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) = expect_event_start(
             xml_reader,

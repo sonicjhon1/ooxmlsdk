@@ -3,7 +3,12 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Arm, FieldValue, Ident, ItemFn, ItemImpl, ItemStruct, Stmt, Type, parse_str, parse2};
 
-use crate::{GenContext, error::BuildErrorReport, models::OpenXmlPart, utils::HashMapOpsError};
+use crate::{
+    GenContext,
+    error::BuildErrorReport,
+    models::OpenXmlPart,
+    utils::{HashMapOpsError, use_traits_fn},
+};
 
 pub fn gen_open_xml_parts(
     part: &OpenXmlPart,
@@ -15,6 +20,8 @@ pub fn gen_open_xml_parts(
         pub const RELATIONSHIP_TYPE: &str = #relationship_type_str;
     })
     .unwrap();
+
+    let use_traits = use_traits_fn()?;
 
     let struct_name_ident: Ident = parse_str(&part.name.to_upper_camel_case()).unwrap();
 
@@ -800,6 +807,8 @@ pub fn gen_open_xml_parts(
         .unwrap();
 
         Ok(quote! {
+            #use_traits
+
             #relationship_type_stmt
 
             #part_struct
@@ -817,6 +826,8 @@ pub fn gen_open_xml_parts(
         .unwrap();
 
         Ok(quote! {
+            #use_traits
+
             #relationship_type_stmt
 
             #part_struct

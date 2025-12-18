@@ -367,10 +367,13 @@ pub(crate) fn generate_pub_item_mods(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use rootcause::prelude::*;
 
     #[test]
-    fn test_gen() {
-        generate(Path::new(&env::var("OUT_DIR").unwrap()).join("./test_gen/")).unwrap();
+    fn test_gen() -> Result<(), Report> {
+        let out_dir = tempfile::tempdir()?;
+        generate(out_dir.path().join("./test_gen/")).unwrap();
+
+        Ok(())
     }
 }

@@ -1,3 +1,4 @@
+use quick_xml::events::BytesStart;
 use super::super::common::*;
 
 #[derive(Clone, Debug, Default)]
@@ -16,26 +17,10 @@ pub enum TypesChildChoice {
     None,
 }
 
-impl std::str::FromStr for Types {
-    type Err = SdkErrorReport;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut xml_reader = from_str_inner(s)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-}
-
-impl Types {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_reader_inner(reader)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub(crate) fn deserialize_inner<'de, R: XmlReader<'de>>(
-        xml_reader: &mut R,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
+impl Deserializeable for Types {
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"w:Types", b"Types")?;
 
@@ -78,7 +63,7 @@ impl Types {
 
         if !empty_tag {
             loop {
-                let mut e_opt: Option<quick_xml::events::BytesStart<'_>> = None;
+                let mut e_opt: Option<BytesStart<'_>> = None;
                 let mut e_empty = false;
 
                 match xml_reader.next()? {
@@ -207,26 +192,10 @@ pub struct Default {
     pub content_type: String,
 }
 
-impl std::str::FromStr for Default {
-    type Err = SdkErrorReport;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut xml_reader = from_str_inner(s)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-}
-
-impl Default {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_reader_inner(reader)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub fn deserialize_inner<'de, R: XmlReader<'de>>(
-        xml_reader: &mut R,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
+impl Deserializeable for Default {
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Default", b"Default")?;
 
@@ -313,26 +282,10 @@ pub struct Override {
     pub part_name: String,
 }
 
-impl std::str::FromStr for Override {
-    type Err = SdkErrorReport;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut xml_reader = from_str_inner(s)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-}
-
-impl Override {
-    pub fn from_reader<R: std::io::BufRead>(reader: R) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = from_reader_inner(reader)?;
-
-        Self::deserialize_inner(&mut xml_reader, None)
-    }
-
-    pub(crate) fn deserialize_inner<'de, R: XmlReader<'de>>(
-        xml_reader: &mut R,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
+impl Deserializeable for Override {
+    fn deserialize_inner<'de>(
+        xml_reader: &mut impl XmlReader<'de>,
+        xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Override", b"Override")?;
 
@@ -370,12 +323,6 @@ impl Override {
             content_type,
             part_name,
         })
-    }
-}
-
-impl std::fmt::Display for Override {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_xml()?)
     }
 }
 
