@@ -522,39 +522,39 @@ fn gen_struct_fn(
         pub inner_path: String,
     });
 
-    if part.name == "CustomXmlPart" || part.name == "XmlSignaturePart" {
-        fields.push(quote! {
+    fields.push(match part.name.as_str() {
+        "CustomXmlPart" | "XmlSignaturePart" => quote! {
             pub part_content: String,
-        });
-    } else if !part.extension.is_empty()
-        || part.name == "CustomDataPart"
-        || part.name == "InternationalMacroSheetPart"
-    {
-        fields.push(quote! {
+        },
+        "CustomDataPart" | "InternationalMacroSheetPart" if !part.extension.is_empty() => quote! {
             pub part_content: Vec<u8>,
-        });
-    } else if part.name == "CoreFilePropertiesPart" {
-        fields.push(quote! {
+        },
+        "CoreFilePropertiesPart" => quote! {
             pub root_element: crate::schemas::opc_core_properties::CoreProperties,
-        });
-    } else if let Some(root_element_type_name) =
-        gen_context.part_name_type_name_map.get(part.name.as_str())
-    {
-        let root_element_type = gen_context
-            .type_name_type_map
-            .try_get(root_element_type_name)?;
+        },
+        _ => {
+            if let Some(root_element_type_name) =
+                gen_context.part_name_type_name_map.get(part.name.as_str())
+            {
+                let root_element_type = gen_context
+                    .type_name_type_map
+                    .try_get(root_element_type_name)?;
 
-        let field_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            root_element_type.module_name,
-            root_element_type.class_name.to_upper_camel_case()
-        ))
-        .unwrap();
+                let field_type: Type = parse_str(&format!(
+                    "crate::schemas::{}::{}",
+                    root_element_type.module_name,
+                    root_element_type.class_name.to_upper_camel_case()
+                ))
+                .unwrap();
 
-        fields.push(quote! {
-          pub root_element: #field_type,
-        });
-    }
+                quote! {
+                    pub root_element: #field_type,
+                }
+            } else {
+                quote! {}
+            }
+        }
+    });
 
     for child in &part.children {
         if child.is_data_part_reference {
@@ -570,17 +570,17 @@ fn gen_struct_fn(
         ))
         .unwrap();
 
-        match child.as_occurrence() {
-            Occurrence::Required => fields.push(quote! {
-              pub #child_name_ident: std::boxed::Box<#child_type>,
-            }),
-            Occurrence::Optional => fields.push(quote! {
-              pub #child_name_ident: Option<std::boxed::Box<#child_type>>,
-            }),
-            Occurrence::Repeated => fields.push(quote! {
-              pub #child_name_ident: Vec<#child_type>,
-            }),
-        };
+        fields.push(match child.as_occurrence() {
+            Occurrence::Required => quote! {
+                pub #child_name_ident: std::boxed::Box<#child_type>,
+            },
+            Occurrence::Optional => quote! {
+                pub #child_name_ident: Option<std::boxed::Box<#child_type>>,
+            },
+            Occurrence::Repeated => quote! {
+                pub #child_name_ident: Vec<#child_type>,
+            },
+        });
     }
 
     parse2(quote! {
@@ -666,73 +666,62 @@ fn gen_save_zip_fn(
 
     writer_stmt_list.push(
         parse2(match part_name_raw {
-            "CustomXmlPart" | "XmlSignaturePart" => {
-                quote! {
-                    if !entry_set.contains(&self.inner_path) {
-                        zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+            "CustomXmlPart" | "XmlSignaturePart" => quote! {
+                if !entry_set.contains(&self.inner_path) {
+                    zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
 
-                        zip.write_all(self.part_content.as_bytes()).map_err(crate::common::SdkError::from)?;
+                    zip.write_all(self.part_content.as_bytes()).map_err(crate::common::SdkError::from)?;
 
-                        entry_set.insert(self.inner_path.to_string());
-                    }
+                    entry_set.insert(self.inner_path.to_string());
                 }
             },
-            "CustomDataPart" | "InternationalMacroSheetPart" if !part.extension.is_empty() => {
-                quote! {
-                    if !entry_set.contains(&self.inner_path) {
-                        zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+            "CustomDataPart" | "InternationalMacroSheetPart" if !part.extension.is_empty() => quote! {
+                if !entry_set.contains(&self.inner_path) {
+                    zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
 
-                        zip.write_all(&self.part_content).map_err(crate::common::SdkError::from)?;
+                    zip.write_all(&self.part_content).map_err(crate::common::SdkError::from)?;
 
-                        entry_set.insert(self.inner_path.to_string());
-                    }
+                    entry_set.insert(self.inner_path.to_string());
                 }
             },
             "CoreFilePropertiesPart"
-                if gen_context
-                    .part_name_type_name_map
-                    .contains_key(part_name_raw) =>
-            {
-                quote! {
-                    if !entry_set.contains(&self.inner_path) {
-                        zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
+            if gen_context
+                .part_name_type_name_map
+                .contains_key(part_name_raw) => quote! {
+                if !entry_set.contains(&self.inner_path) {
+                    zip.start_file(&self.inner_path, options).map_err(crate::common::SdkError::from)?;
 
-                        zip.write_all(self.root_element.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
-                            .map_err(crate::common::SdkError::from)?;
+                    zip.write_all(self.root_element.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
+                        .map_err(crate::common::SdkError::from)?;
 
-                        entry_set.insert(self.inner_path.to_string());
+                    entry_set.insert(self.inner_path.to_string());
+                }
+            },
+            _ if !part.children.is_empty() => quote! {
+                let child_parent_path = format!("{}{}", parent_path, #path_str);
+
+                if let Some(relationships) = &self.relationships {
+                    let rels_dir_path = crate::common::resolve_zip_file_path(
+                        &format!("{child_parent_path}_rels"),
+                    );
+
+                    if !rels_dir_path.is_empty() && !entry_set.contains(&rels_dir_path) {
+                        zip.add_directory(&rels_dir_path, options).map_err(crate::common::SdkError::from)?;
+
+                        entry_set.insert(rels_dir_path);
+                    }
+
+                    if !entry_set.contains(&self.rels_path) {
+                        zip.start_file(&self.rels_path, options).map_err(crate::common::SdkError::from)?;
+
+                        zip.write_all(relationships.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
+                        .map_err(crate::common::SdkError::from)?;
+
+                        entry_set.insert(self.rels_path.to_string());
                     }
                 }
             },
-            _ if !part.children.is_empty() => {
-                quote! {
-                    let child_parent_path = format!("{}{}", parent_path, #path_str);
-
-                    if let Some(relationships) = &self.relationships {
-                        let rels_dir_path = crate::common::resolve_zip_file_path(
-                            &format!("{child_parent_path}_rels"),
-                        );
-
-                        if !rels_dir_path.is_empty() && !entry_set.contains(&rels_dir_path) {
-                            zip.add_directory(&rels_dir_path, options).map_err(crate::common::SdkError::from)?;
-
-                            entry_set.insert(rels_dir_path);
-                        }
-
-                        if !entry_set.contains(&self.rels_path) {
-                            zip.start_file(&self.rels_path, options).map_err(crate::common::SdkError::from)?;
-
-                            zip.write_all(relationships.to_xml().map_err(crate::common::SdkError::from)?.as_bytes())
-                                .map_err(crate::common::SdkError::from)?;
-
-                            entry_set.insert(self.rels_path.to_string());
-                        }
-                    }
-                }
-            },
-            _ => {
-                quote! {}
-            }
+            _ => quote! {}
         })
         .context_transform(BuildError::from)?,
     );
