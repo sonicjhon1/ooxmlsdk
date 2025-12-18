@@ -1,11 +1,12 @@
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use quote::quote;
+use rootcause::prelude::ResultExt;
 use syn::{Arm, FieldValue, Ident, ItemFn, ItemImpl, ItemStruct, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
-    error::BuildErrorReport,
+    error::{BuildError, BuildErrorReport},
     models::OpenXmlPart,
     utils::{HashMapOpsError, use_traits_fn},
 };
@@ -728,7 +729,7 @@ pub fn gen_open_xml_parts(
     })
     .unwrap();
 
-    if part.base == "OpenXmlPackage" {
+    let part_impl: ItemImpl = if part.base == "OpenXmlPackage" {
         let part_new_fn: ItemFn = parse2(quote! {
             pub fn new<R: std::io::Read + std::io::Seek>(
                 reader: R,
@@ -789,7 +790,7 @@ pub fn gen_open_xml_parts(
         })
         .unwrap();
 
-        let part_impl: ItemImpl = parse2(quote! {
+        parse2(quote! {
             impl #struct_name_ident {
                 #part_new_fn
 
@@ -804,35 +805,23 @@ pub fn gen_open_xml_parts(
                 #part_save_zip_fn
             }
         })
-        .unwrap();
-
-        Ok(quote! {
-            #use_traits
-
-            #relationship_type_stmt
-
-            #part_struct
-
-            #part_impl
-        })
     } else {
-        let part_impl: ItemImpl = parse2(quote! {
+        parse2(quote! {
             impl #struct_name_ident {
                 #part_new_from_archive_fn
 
                 #part_save_zip_fn
             }
         })
-        .unwrap();
+    }.context_transform(BuildError::from)?;
 
-        Ok(quote! {
-            #use_traits
+    Ok(quote! {
+        #use_traits
 
-            #relationship_type_stmt
+        #relationship_type_stmt
 
-            #part_struct
+        #part_struct
 
-            #part_impl
-        })
-    }
+        #part_impl
+    })
 }
