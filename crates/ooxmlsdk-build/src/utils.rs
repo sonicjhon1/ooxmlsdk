@@ -1,9 +1,8 @@
-use crate::error::{BuildError, BuildErrorReport};
+use crate::error::BuildError;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::collections::HashMap;
-use syn::parse2;
 
 pub fn escape_snake_case(name: &str) -> String {
     let name = name.to_snake_case();
@@ -61,9 +60,8 @@ impl<K: AsRef<str>, V> HashMapOpsError<K, V> for HashMap<String, V> {
     }
 }
 
-pub fn use_traits_fn() -> Result<TokenStream, BuildErrorReport> {
-    return Ok(parse2(quote! {
+pub fn use_traits_fn() -> TokenStream {
+    return quote! {
         use crate::common::Deserializeable;
-    })
-    .map_err(BuildError::from)?);
+    };
 }

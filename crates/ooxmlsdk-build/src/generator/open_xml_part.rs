@@ -15,7 +15,7 @@ pub fn gen_open_xml_parts(
     part: &OpenXmlPart,
     gen_context: &GenContext,
 ) -> Result<TokenStream, BuildErrorReport> {
-    let use_traits = use_traits_fn()?;
+    let use_traits = use_traits_fn();
 
     let relationship_type_str = &part.relationship_type;
     let relationship_type_stmt: Stmt = parse2(quote! {
