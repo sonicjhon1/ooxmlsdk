@@ -1,5 +1,5 @@
-use quick_xml::events::BytesStart;
 use super::super::common::*;
+use quick_xml::events::BytesStart;
 
 #[derive(Clone, Debug, Default)]
 pub struct Types {
