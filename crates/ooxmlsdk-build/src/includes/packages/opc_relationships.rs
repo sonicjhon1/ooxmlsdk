@@ -103,70 +103,39 @@ impl Deserializeable for Relationships {
     }
 }
 
-impl Relationships {
-    #[allow(clippy::inherent_to_string)]
-    pub fn to_xml(&self) -> Result<String, std::fmt::Error> {
-        self.to_string_inner(if let Some(xmlns) = &self.xmlns {
-            xmlns != "http://schemas.openxmlformats.org/package/2006/relationships"
-        } else {
-            true
-        })
-    }
+impl Serializeable for Relationships {
+    const PREFIXED_NAME: &str = "w:Relationships";
 
-    pub fn to_string_inner(&self, with_xmlns: bool) -> Result<String, std::fmt::Error> {
-        use std::fmt::Write;
+    const NAME: &str = "Relationships";
 
-        let mut writer = String::new();
+    fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+        let mut attributes = String::with_capacity(
+            const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 32 },
+        );
 
-        writer.write_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n")?;
-
-        writer.write_char('<')?;
-
-        if with_xmlns {
-            writer.write_str("w:Relationships")?;
-        } else {
-            writer.write_str("Relationships")?;
+        if needs_xmlns && let Some(xmlns) = &self.xmlns {
+            attributes.push_str(&as_xml_attribute("xmlns", xmlns));
         }
 
-        if let Some(xmlns) = &self.xmlns {
-            writer.write_str(r#" xmlns=""#)?;
-            writer.write_str(xmlns)?;
-            writer.write_str("\"")?;
-        }
-
-        for (k, v) in &self.xmlns_map {
-            writer.write_str(" xmlns:")?;
-            writer.write_str(k)?;
-            writer.write_str("=\"")?;
-            writer.write_str(v)?;
-            writer.write_str("\"")?;
+        for (key, value) in &self.xmlns_map {
+            attributes.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
         }
 
         if let Some(mc_ignorable) = &self.mc_ignorable {
-            writer.write_str(r#" mc:Ignorable=""#)?;
-            writer.write_str(mc_ignorable)?;
-            writer.write_str("\"")?;
+            attributes.push_str(&as_xml_attribute("mc:ignorable", mc_ignorable));
         }
 
-        writer.write_char('>')?;
+        return Some(attributes);
+    }
+
+    fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
+        let mut xml = String::with_capacity(32);
 
         for child in &self.relationship {
-            let child_str = child.to_string_inner(with_xmlns)?;
-
-            writer.write_str(&child_str)?;
+            xml.push_str(&child.to_xml_string(false, with_xmlns));
         }
 
-        writer.write_str("</")?;
-
-        if with_xmlns {
-            writer.write_str("w:Relationships")?;
-        } else {
-            writer.write_str("Relationships")?;
-        }
-
-        writer.write_char('>')?;
-
-        Ok(writer)
+        return Some(xml);
     }
 }
 
@@ -244,53 +213,26 @@ impl Deserializeable for Relationship {
     }
 }
 
-impl Relationship {
-    #[allow(clippy::inherent_to_string)]
-    pub fn to_xml(&self) -> Result<String, std::fmt::Error> { self.to_string_inner(false) }
+impl Serializeable for Relationship {
+    const PREFIXED_NAME: &str = "w:Relationship";
 
-    pub fn to_string_inner(&self, with_xmlns: bool) -> Result<String, std::fmt::Error> {
-        use std::fmt::Write;
+    const NAME: &str = "Relationship";
 
-        let mut writer = String::new();
-
-        writer.write_char('<')?;
-
-        if with_xmlns {
-            writer.write_str("w:Relationship")?;
-        } else {
-            writer.write_str("Relationship")?;
-        }
+    fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+        let mut attributes =
+            String::with_capacity(const { "Extension".len() + "ContentType".len() + 32 });
 
         if let Some(target_mode) = &self.target_mode {
-            writer.write_char(' ')?;
-            writer.write_str("TargetMode")?;
-            writer.write_str("=\"")?;
-            writer.write_str(&quick_xml::escape::escape(target_mode.to_string()))?;
-            writer.write_char('"')?;
+            attributes.push_str(&as_xml_attribute("TargetMode", &target_mode.to_string()));
         }
+        attributes.push_str(&as_xml_attribute("Target", &self.target));
+        attributes.push_str(&as_xml_attribute("Type", &self.r#type));
+        attributes.push_str(&as_xml_attribute("Id", &self.id));
 
-        writer.write_char(' ')?;
-        writer.write_str("Target")?;
-        writer.write_str("=\"")?;
-        writer.write_str(&quick_xml::escape::escape(self.target.to_string()))?;
-        writer.write_char('"')?;
-
-        writer.write_char(' ')?;
-        writer.write_str("Type")?;
-        writer.write_str("=\"")?;
-        writer.write_str(&quick_xml::escape::escape(self.r#type.to_string()))?;
-        writer.write_char('"')?;
-
-        writer.write_char(' ')?;
-        writer.write_str("Id")?;
-        writer.write_str("=\"")?;
-        writer.write_str(&quick_xml::escape::escape(self.id.to_string()))?;
-        writer.write_char('"')?;
-
-        writer.write_str("/>")?;
-
-        Ok(writer)
+        return Some(attributes);
     }
+
+    fn xml_inner(&self, _with_xmlns: bool) -> Option<String> { None }
 }
 
 #[derive(Clone, Debug, Default)]

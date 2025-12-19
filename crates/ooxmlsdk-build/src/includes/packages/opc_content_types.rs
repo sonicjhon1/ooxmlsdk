@@ -1,10 +1,11 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Types {
     pub xmlns: Option<String>,
-    pub xmlns_map: std::collections::HashMap<String, String>,
+    pub xmlns_map: HashMap<String, String>,
     pub mc_ignorable: Option<String>,
     pub children: Vec<TypesChildChoice>,
 }
@@ -25,7 +26,7 @@ impl Deserializeable for Types {
         let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"w:Types", b"Types")?;
 
         let mut xmlns = None;
-        let mut xmlns_map = std::collections::HashMap::<String, String>::new();
+        let mut xmlns_map = HashMap::<String, String>::new();
         let mut mc_ignorable = None;
 
         let mut children = vec![];
@@ -111,78 +112,47 @@ impl Deserializeable for Types {
     }
 }
 
-impl Types {
-    pub fn to_xml(&self) -> Result<String, std::fmt::Error> {
-        let mut writer = String::with_capacity(32);
+impl Serializeable for Types {
+    const PREFIXED_NAME: &str = "Types";
 
-        self.write_xml(
-            &mut writer,
-            if let Some(xmlns) = &self.xmlns {
-                xmlns != "http://schemas.openxmlformats.org/package/2006/content-types"
-            } else {
-                true
-            },
-        )?;
+    const NAME: &str = "w:Types";
 
-        Ok(writer)
-    }
+    fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+        let mut attributes = String::with_capacity(
+            const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 32 },
+        );
 
-    pub(crate) fn write_xml<W: std::fmt::Write>(
-        &self,
-        writer: &mut W,
-        with_xmlns: bool,
-    ) -> Result<(), std::fmt::Error> {
-        writer.write_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n")?;
-
-        writer.write_char('<')?;
-
-        if with_xmlns {
-            writer.write_str("w:Types")?;
-        } else {
-            writer.write_str("Types")?;
+        if needs_xmlns && let Some(xmlns) = &self.xmlns {
+            attributes.push_str(&as_xml_attribute("xmlns", xmlns));
         }
 
-        if let Some(xmlns) = &self.xmlns {
-            writer.write_str(r#" xmlns=""#)?;
-            writer.write_str(xmlns)?;
-            writer.write_str("\"")?;
-        }
-
-        for (k, v) in &self.xmlns_map {
-            writer.write_str(" xmlns:")?;
-            writer.write_str(k)?;
-            writer.write_str("=\"")?;
-            writer.write_str(v)?;
-            writer.write_str("\"")?;
+        for (key, value) in &self.xmlns_map {
+            attributes.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
         }
 
         if let Some(mc_ignorable) = &self.mc_ignorable {
-            writer.write_str(r#" mc:Ignorable=""#)?;
-            writer.write_str(mc_ignorable)?;
-            writer.write_str("\"")?;
+            attributes.push_str(&as_xml_attribute("mc:ignorable", mc_ignorable));
         }
 
-        writer.write_char('>')?;
+        return Some(attributes);
+    }
+
+    fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
+        let mut xml = String::with_capacity(32);
 
         for child in &self.children {
             match child {
-                TypesChildChoice::Default(child) => child.write_xml(writer, with_xmlns)?,
-                TypesChildChoice::Override(child) => child.write_xml(writer, with_xmlns)?,
+                TypesChildChoice::Default(child) => {
+                    xml.push_str(&child.to_xml_string(false, with_xmlns))
+                }
+                TypesChildChoice::Override(child) => {
+                    xml.push_str(&child.to_xml_string(false, with_xmlns))
+                }
                 TypesChildChoice::None => (),
             }
         }
 
-        writer.write_str("</")?;
-
-        if with_xmlns {
-            writer.write_str("w:Types")?;
-        } else {
-            writer.write_str("Types")?;
-        }
-
-        writer.write_char('>')?;
-
-        Ok(())
+        return Some(xml);
     }
 }
 
@@ -236,44 +206,22 @@ impl Deserializeable for Default {
     }
 }
 
-impl Default {
-    pub fn to_xml(&self) -> Result<String, std::fmt::Error> {
-        let mut writer = String::with_capacity(32);
+impl Serializeable for Default {
+    const PREFIXED_NAME: &str = "w:Default";
 
-        self.write_xml(&mut writer, false)?;
+    const NAME: &str = "Default";
 
-        Ok(writer)
+    fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+        let mut attributes =
+            String::with_capacity(const { "Extension".len() + "ContentType".len() + 32 });
+
+        attributes.push_str(&as_xml_attribute("Extension", &self.extension));
+        attributes.push_str(&as_xml_attribute("ContentType", &self.content_type));
+
+        return Some(attributes);
     }
 
-    pub(crate) fn write_xml<W: std::fmt::Write>(
-        &self,
-        writer: &mut W,
-        with_xmlns: bool,
-    ) -> Result<(), std::fmt::Error> {
-        writer.write_char('<')?;
-
-        if with_xmlns {
-            writer.write_str("w:Default")?;
-        } else {
-            writer.write_str("Default")?;
-        }
-
-        writer.write_char(' ')?;
-        writer.write_str("Extension")?;
-        writer.write_str("=\"")?;
-        writer.write_str(&quick_xml::escape::escape(self.extension.to_string()))?;
-        writer.write_char('"')?;
-
-        writer.write_char(' ')?;
-        writer.write_str("ContentType")?;
-        writer.write_str("=\"")?;
-        writer.write_str(&quick_xml::escape::escape(self.content_type.to_string()))?;
-        writer.write_char('"')?;
-
-        writer.write_str("/>")?;
-
-        Ok(())
-    }
+    fn xml_inner(&self, _with_xmlns: bool) -> Option<String> { None }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -326,36 +274,20 @@ impl Deserializeable for Override {
     }
 }
 
-impl Override {
-    pub fn to_xml(&self) -> Result<String, std::fmt::Error> {
-        let mut writer = String::with_capacity(32);
+impl Serializeable for Override {
+    const PREFIXED_NAME: &str = "w:Override";
 
-        self.write_xml(&mut writer, false)?;
+    const NAME: &str = "Override";
 
-        Ok(writer)
+    fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+        let mut attributes =
+            String::with_capacity(const { "Extension".len() + "PartName".len() + 32 });
+
+        attributes.push_str(&as_xml_attribute("ContentType", &self.content_type));
+        attributes.push_str(&as_xml_attribute("PartName", &self.content_type));
+
+        return Some(attributes);
     }
 
-    pub(crate) fn write_xml<W: std::fmt::Write>(
-        &self,
-        writer: &mut W,
-        with_xmlns: bool,
-    ) -> Result<(), std::fmt::Error> {
-        if with_xmlns {
-            writer.write_str("<w:Override")?;
-        } else {
-            writer.write_str("<Override")?;
-        }
-
-        writer.write_str(" ContentType=\"")?;
-        writer.write_str(&quick_xml::escape::escape(&self.content_type))?;
-        writer.write_char('"')?;
-
-        writer.write_str(" PartName=\"")?;
-        writer.write_str(&quick_xml::escape::escape(&self.part_name))?;
-        writer.write_char('"')?;
-
-        writer.write_str("/>")?;
-
-        Ok(())
-    }
+    fn xml_inner(&self, _with_xmlns: bool) -> Option<String> { None }
 }

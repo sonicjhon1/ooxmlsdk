@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ooxmlsdk_build::includes::common::Deserializeable;
+use ooxmlsdk_build::includes::common::{Deserializeable, Serializeable};
 use serde::{Deserialize, Serialize};
 
 const XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -48,7 +48,7 @@ fn serde_from_str() { let _: Types = quick_xml::de::from_str(XML).unwrap(); }
 fn to_str() {
     let t = ooxmlsdk_build::includes::packages::opc_content_types::Types::from_str(XML).unwrap();
 
-    let _ = t.to_xml();
+    let _ = t.to_xml_string(true, true);
 }
 
 fn bench_from_str(c: &mut Criterion) { c.bench_function("from_str", |b| b.iter(from_str)); }

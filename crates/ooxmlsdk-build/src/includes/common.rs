@@ -119,6 +119,94 @@ pub trait Deserializeable: Sized {
     ) -> Result<Self, SdkErrorReport>;
 }
 
+pub trait Serializeable {
+    const PREFIXED_NAME: &str;
+
+    const NAME: &str;
+
+    fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String>;
+
+    fn xml_inner(&self, with_xmlns: bool) -> Option<String>;
+
+    #[inline]
+    fn xml_tag_start(&self, with_xmlns: bool) -> String {
+        let mut xml = String::with_capacity(const { Self::PREFIXED_NAME.len() + 32 });
+
+        xml.push('<');
+
+        if with_xmlns {
+            xml.push_str(Self::PREFIXED_NAME);
+        } else {
+            xml.push_str(Self::NAME);
+        }
+
+        if let Some(xml_tag_attributes) = self.xml_tag_attributes(with_xmlns) {
+            xml.push_str(&xml_tag_attributes);
+        }
+
+        xml.push('>');
+
+        return xml;
+    }
+
+    #[inline]
+    fn xml_tag_end(&self, needs_xmlns: bool) -> String {
+        let mut xml = String::with_capacity(const { Self::PREFIXED_NAME.len() + 3 });
+
+        xml.push_str("</");
+
+        if needs_xmlns {
+            xml.push_str(Self::PREFIXED_NAME);
+        } else {
+            xml.push_str(Self::NAME);
+        }
+
+        xml.push('>');
+
+        return xml;
+    }
+
+    #[inline]
+    fn to_xml_string(&self, header: bool, needs_xmlns: bool) -> String {
+        let mut xml = String::with_capacity(64);
+
+        if header {
+            xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n");
+        }
+
+        xml.push_str(&self.xml_tag_start(needs_xmlns));
+
+        if let Some(xml_inner) = self.xml_inner(needs_xmlns) {
+            xml.push_str(&xml_inner);
+        }
+
+        xml.push_str(&self.xml_tag_end(needs_xmlns));
+
+        return xml;
+    }
+
+    #[inline]
+    fn to_xml_bytes(&self, header: bool, needs_xmlns: bool) -> Vec<u8> {
+        let mut xml = Vec::with_capacity(128);
+
+        if header {
+            xml.extend_from_slice(
+                b"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n",
+            );
+        }
+
+        xml.extend_from_slice(self.xml_tag_start(needs_xmlns).as_bytes());
+
+        if let Some(xml_inner) = self.xml_inner(needs_xmlns) {
+            xml.extend_from_slice(xml_inner.as_bytes());
+        }
+
+        xml.extend_from_slice(self.xml_tag_end(needs_xmlns).as_bytes());
+
+        return xml;
+    }
+}
+
 pub fn resolve_zip_file_path(path: &str) -> String {
     let mut stack = Vec::new();
 
@@ -152,6 +240,19 @@ pub fn parse_bool_bytes(b: &[u8]) -> Result<bool, SdkErrorReport> {
             String::from_utf8_lossy(other).into_owned(),
         ))?,
     }
+}
+
+#[inline]
+pub fn as_xml_attribute(key: &str, value: &str) -> String {
+    let mut attribute = String::with_capacity(16);
+
+    attribute.push(' ');
+    attribute.push_str(key);
+    attribute.push_str("=\"");
+    attribute.push_str(value);
+    attribute.push('"');
+
+    return attribute;
 }
 
 #[inline(always)]

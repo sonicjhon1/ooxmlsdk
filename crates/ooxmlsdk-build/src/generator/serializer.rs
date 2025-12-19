@@ -1,71 +1,27 @@
 use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
-use std::collections::HashMap;
-use syn::{Arm, ItemFn, ItemImpl, Stmt, Type, parse_str, parse2};
+use rootcause::report;
+use syn::{Ident, ImplItemFn, Stmt, Type, parse_quote, parse_str};
 
 use crate::{
     GenContext,
     error::*,
-    models::{Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
-    utils::HashMapOpsError,
+    models::{
+        Occurrence, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
+        OpenXmlSchemaTypeChild,
+    },
+    utils::{HashMapOpsError, gen_use_common_glob},
 };
 
 pub fn gen_serializer(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
 ) -> Result<TokenStream, BuildErrorReport> {
-    let mut token_stream_list: Vec<ItemImpl> = vec![];
+    let mut token_stream_list: Vec<TokenStream> = Vec::with_capacity(schema.types.len() + schema.enums.len());
 
-    let schema_namespace = gen_context
-        .uri_namespace_map
-        .try_get(schema.target_namespace.as_str())?;
-
-    for schema_enum in &schema.enums {
-        let enum_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            &schema.module_name,
-            schema_enum.name.to_upper_camel_case()
-        ))
-        .unwrap();
-
-        let mut variants: Vec<Arm> = vec![];
-
-        for schema_enum_facet in &schema_enum.facets {
-            let variant_ident = schema_enum_facet.as_variant_ident();
-            let variant_value = &schema_enum_facet.value;
-
-            variants.push(
-                parse2(quote! {
-                  Self::#variant_ident => #variant_value.to_string(),
-                })
-                .unwrap(),
-            );
-        }
-
-        token_stream_list.push(
-            parse2(quote! {
-              impl #enum_type {
-                pub fn to_xml(&self) -> String {
-                  match self {
-                    #( #variants )*
-                  }
-                }
-              }
-            })
-            .unwrap(),
-        );
-
-        token_stream_list.push(
-            parse2(quote! {
-              impl std::fmt::Display for #enum_type {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                  write!(f, "{}", self.to_xml())
-                }
-              }
-            })
-            .unwrap(),
-        );
+    if !schema.types.is_empty() {
+        token_stream_list.push(gen_use_common_glob());
     }
 
     for schema_type in &schema.types {
@@ -80,450 +36,142 @@ pub fn gen_serializer(
         ))
         .unwrap();
 
-        let child_choice_enum_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}ChildChoice",
+        let (_, type_prefixed_name) = schema_type.split_name();
+        let (_, type_name) = schema_type.split_last_name();
+
+        let attributes_ident = parse_quote!(attributes);
+        let mut xml_tag_attributes_inner: Vec<TokenStream> = vec![];
+        for attribute in &schema_type.attributes {
+            xml_tag_attributes_inner.push(gen_attr(attribute, &attributes_ident));
+        }
+
+        let xml_inner_ident = parse_quote!(xml);
+        let xml_inner_writer = gen_inner_writer(
+            schema,
+            schema_type,
+            &attributes_ident,
+            &mut xml_tag_attributes_inner,
+            &xml_inner_ident,
+            gen_context,
+        )?;
+
+        // TODO: Is this needed?
+        // let xml_needs_header =
+        //     !schema_type.part.is_empty() || schema_type.base_class == "OpenXmlPartRootElement";
+
+        let xml_tag_attributes_xmlns_inner: Option<TokenStream> = if !schema_type.part.is_empty()
+            || schema_type.base_class == "OpenXmlPartRootElement"
+            || ((schema_type.base_class == "OpenXmlCompositeElement"
+                || schema_type.base_class == "CustomXmlElement"
+                || schema_type.base_class == "OpenXmlPartRootElement"
+                || schema_type.base_class == "SdtElement")
+                && (schema.target_namespace
+                    == "http://schemas.openxmlformats.org/drawingml/2006/main"
+                    || schema.target_namespace
+                        == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
+        {
+            Some(quote! {
+              if needs_xmlns && let Some(xmlns) = &self.xmlns {
+                #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
+              }
+
+              for (key, value) in &self.xmlns_map {
+                #attributes_ident.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
+              }
+
+              if let Some(mc_ignorable) = &self.mc_ignorable {
+                //TODO: Check if it should be Ignorable or ignorable
+                #attributes_ident.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
+              }
+            })
+        } else {
+            None
+        };
+
+        let xml_tag_attributes: ImplItemFn =
+            if xml_tag_attributes_xmlns_inner.is_some() || !xml_tag_attributes_inner.is_empty() {
+                parse_quote! {
+                  #[allow(unused_variables)]
+                  fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+                      let mut #attributes_ident = String::with_capacity(
+                        const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 64 },
+                      );
+
+                      #xml_tag_attributes_xmlns_inner
+
+                      #( #xml_tag_attributes_inner )*
+
+                      return Some(#attributes_ident);
+                  }
+                }
+            } else {
+                parse_quote! {
+                  fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+                      return None;
+                  }
+                }
+            };
+
+        let xml_inner: ImplItemFn = if xml_inner_writer.is_some() {
+            parse_quote!(
+                #[allow(unused_variables)]
+                fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
+                    let mut #xml_inner_ident = String::with_capacity(512);
+
+                    #xml_inner_writer
+
+                    return Some(#xml_inner_ident);
+                }
+            )
+        } else {
+            parse_quote! {
+                fn xml_inner(&self, _with_xmlns: bool) -> Option<String> {
+                    return None;
+                }
+            }
+        };
+
+        token_stream_list.push(parse_quote!(
+          impl Serializeable for #struct_type {
+              const PREFIXED_NAME: &str = #type_prefixed_name;
+
+              const NAME: &str = #type_name;
+
+              #xml_tag_attributes
+
+              #xml_inner
+          }
+        ));
+    }
+
+    for schema_enum in &schema.enums {
+        let enum_type: Type = parse_str(&format!(
+            "crate::schemas::{}::{}",
             &schema.module_name,
-            schema_type.class_name.to_upper_camel_case()
+            schema_enum.name.to_upper_camel_case()
         ))
         .unwrap();
 
-        let (type_base_class, type_prefixed_name) = schema_type.split_name();
-        let (type_prefix, type_name) = type_prefixed_name.split_once(':').unwrap();
+        let variants = schema_enum.facets.iter().map(|schema_enum_facet| {
+            let variant_ident = schema_enum_facet.as_variant_ident();
+            let variant_value = &schema_enum_facet.value;
 
-        let prefixed_name_start_tag = format!("<{type_prefixed_name}");
-        let name_start_tag = format!("<{type_name}");
-
-        let prefixed_name_end_tag = format!("</{type_prefixed_name}>");
-        let name_end_tag = format!("</{type_name}>");
-
-        let end_tag_writer;
-
-        let end_writer;
-
-        let mut variants: Vec<TokenStream> = vec![];
-
-        let mut children_writer = quote! {};
-
-        let mut child_arms: Vec<Arm> = vec![];
-
-        for attr in &schema_type.attributes {
-            variants.push(gen_attr(attr));
-        }
-
-        if schema_type.base_class == "OpenXmlLeafTextElement" {
-            children_writer = quote! {
-              if let Some(xml_content) = &self.xml_content {
-                writer.write_str(&quick_xml::escape::escape(xml_content.to_string()))?;
-              }
+            return quote! {
+              Self::#variant_ident => #variant_value,
             };
+        });
 
-            end_tag_writer = quote! {
-              writer.write_char('>')?;
-            };
+        token_stream_list.push(parse_quote! {
+          impl std::fmt::Display for #enum_type {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+              let value = match self {
+                #( #variants )*
+              };
 
-            end_writer = quote! {
-              if xmlns_prefix == #type_prefix {
-                writer.write_str(#name_end_tag)?;
-              } else {
-                writer.write_str(#prefixed_name_end_tag)?;
-              }
-            };
-        } else if schema_type.base_class == "OpenXmlLeafElement" {
-            children_writer = quote! {};
-
-            end_tag_writer = quote! {};
-
-            end_writer = quote! {
-              writer.write_str("/>")?;
-            };
-        } else if schema_type.base_class == "OpenXmlCompositeElement"
-            || schema_type.base_class == "CustomXmlElement"
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || schema_type.base_class == "SdtElement"
-        {
-            if schema_type.children.is_empty() {
-                end_tag_writer = quote! {};
-
-                end_writer = quote! {
-                  writer.write_str("/>")?;
-                };
-            } else if schema_type.is_one_sequence_flatten() {
-                let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> =
-                    HashMap::with_capacity(schema_type.children.len());
-                for child in &schema_type.children {
-                    child_map.insert(&child.name, child);
-                }
-
-                let mut child_stmt_list: Vec<Stmt> = vec![];
-
-                for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
-                    let child_name_ident = child.as_property_name_ident();
-
-                    match schema_type_particle.as_occurrence() {
-                        Occurrence::Required => {
-                            child_stmt_list.push(
-                                parse2(quote! {
-                                  self.#child_name_ident.write_xml(writer, xmlns_prefix)?;
-                                })
-                                .unwrap(),
-                            );
-                        }
-                        Occurrence::Optional => {
-                            child_stmt_list.push(
-                                parse2(quote! {
-                                  if let Some(#child_name_ident) = &self.#child_name_ident {
-                                    #child_name_ident.write_xml(writer, xmlns_prefix)?;
-                                  }
-                                })
-                                .unwrap(),
-                            );
-                        }
-                        Occurrence::Repeated => {
-                            child_stmt_list.push(
-                                parse2(quote! {
-                                  for child in &self.#child_name_ident {
-                                    child.write_xml(writer, xmlns_prefix)?;
-                                  }
-                                })
-                                .unwrap(),
-                            );
-                        }
-                    };
-                }
-
-                children_writer = quote! {
-                  #( #child_stmt_list )*
-                };
-
-                end_tag_writer = quote! {
-                  writer.write_char('>')?;
-                };
-
-                end_writer = quote! {
-                  if xmlns_prefix == #type_prefix {
-                    writer.write_str(#name_end_tag)?;
-                  } else {
-                    writer.write_str(#prefixed_name_end_tag)?;
-                  }
-                };
-            } else {
-                for child in &schema_type.children {
-                    child_arms.push(gen_child_arm(child, &child_choice_enum_type));
-                }
-
-                children_writer = quote! {
-                  for child in &self.children {
-                    match child {
-                      #( #child_arms )*
-                    };
-                  }
-                };
-
-                end_tag_writer = quote! {
-                  writer.write_char('>')?;
-                };
-
-                end_writer = quote! {
-                  if xmlns_prefix == #type_prefix {
-                    writer.write_str(#name_end_tag)?;
-                  } else {
-                    writer.write_str(#prefixed_name_end_tag)?;
-                  }
-                };
+              return write!(f, "{value}");
             }
-        } else if schema_type.is_derived {
-            let base_class_type = gen_context
-                .type_name_type_map
-                .try_get(format!("{type_base_class}/").as_str())?;
-
-            for attr in &base_class_type.attributes {
-                variants.push(gen_attr(attr));
-            }
-
-            let mut children_map: HashMap<&str, OpenXmlSchemaTypeChild> = HashMap::new();
-
-            for c in &schema_type.children {
-                children_map.insert(&c.name, c.clone());
-            }
-
-            for c in &base_class_type.children {
-                children_map.insert(&c.name, c.clone());
-            }
-
-            let children: Vec<OpenXmlSchemaTypeChild> = children_map.into_values().collect();
-
-            for child in &children {
-                child_arms.push(gen_child_arm(child, &child_choice_enum_type));
-            }
-
-            if children.is_empty() {
-                if base_class_type.base_class == "OpenXmlLeafTextElement" {
-                    children_writer = quote! {
-                      if let Some(xml_content) = &self.xml_content {
-                        writer.write_str(&quick_xml::escape::escape(xml_content.to_string()))?;
-                      }
-                    };
-
-                    end_tag_writer = quote! {
-                      writer.write_char('>')?;
-                    };
-
-                    end_writer = quote! {
-                      if xmlns_prefix == #type_prefix {
-                        writer.write_str(#name_end_tag)?;
-                      } else {
-                        writer.write_str(#prefixed_name_end_tag)?;
-                      }
-                    };
-                } else {
-                    end_tag_writer = quote! {};
-
-                    end_writer = quote! {
-                      writer.write_str("/>")?;
-                    };
-                }
-            } else if schema_type.is_one_sequence_flatten()
-                && base_class_type.composite_type == "OneSequence"
-            {
-                let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
-
-                for child in &schema_type.children {
-                    child_map.insert(&child.name, child);
-                }
-
-                let mut child_stmt_list: Vec<Stmt> = vec![];
-
-                for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
-                    let child_name_ident = child.as_property_name_ident();
-
-                    match schema_type_particle.as_occurrence() {
-                        Occurrence::Required => {
-                            child_stmt_list.push(
-                                parse2(quote! {
-                                  self.#child_name_ident.write_xml(writer, xmlns_prefix)?;
-                                })
-                                .unwrap(),
-                            );
-                        }
-                        Occurrence::Optional => {
-                            child_stmt_list.push(
-                                parse2(quote! {
-                                  if let Some(#child_name_ident) = &self.#child_name_ident {
-                                    #child_name_ident.write_xml(writer, xmlns_prefix)?;
-                                  }
-                                })
-                                .unwrap(),
-                            );
-                        }
-                        Occurrence::Repeated => {
-                            child_stmt_list.push(
-                                parse2(quote! {
-                                  for child in &self.#child_name_ident {
-                                    child.write_xml(writer, xmlns_prefix)?;
-                                  }
-                                })
-                                .unwrap(),
-                            );
-                        }
-                    }
-                }
-
-                children_writer = quote! {
-                  #( #child_stmt_list )*
-                };
-
-                end_tag_writer = quote! {
-                  writer.write_char('>')?;
-                };
-
-                end_writer = quote! {
-                  if xmlns_prefix == #type_prefix {
-                    writer.write_str(#name_end_tag)?;
-                  } else {
-                    writer.write_str(#prefixed_name_end_tag)?;
-                  }
-                };
-            } else {
-                children_writer = quote! {
-                  for child in &self.children {
-                    match child {
-                      #( #child_arms )*
-                    };
-                  }
-                };
-
-                end_tag_writer = quote! {
-                  writer.write_char('>')?;
-                };
-
-                end_writer = quote! {
-                  if xmlns_prefix == #type_prefix {
-                    writer.write_str(#name_end_tag)?;
-                  } else {
-                    writer.write_str(#prefixed_name_end_tag)?;
-                  }
-                };
-            }
-        } else {
-            panic!("{schema_type:?}");
-        };
-
-        let attr_writer = quote! {
-          #( #variants )*
-        };
-
-        let mut xmlns_attr_writer_list: Vec<Stmt> = vec![];
-
-        let mut xml_header_writer: Option<Stmt> = None;
-
-        if !schema_type.part.is_empty() || schema_type.base_class == "OpenXmlPartRootElement" {
-            xml_header_writer = Some(
-                parse2(quote! {
-                    writer.write_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n")?;
-                })
-                .unwrap(),
-            );
-        }
-
-        if !schema_type.part.is_empty()
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || ((schema_type.base_class == "OpenXmlCompositeElement"
-                || schema_type.base_class == "CustomXmlElement"
-                || schema_type.base_class == "OpenXmlPartRootElement"
-                || schema_type.base_class == "SdtElement")
-                && (schema.target_namespace
-                    == "http://schemas.openxmlformats.org/drawingml/2006/main"
-                    || schema.target_namespace
-                        == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
-        {
-            xmlns_attr_writer_list.push(
-                parse2(quote! {
-                  if let Some(xmlns) = &self.xmlns {
-                    writer.write_str(r#" xmlns=""#)?;
-                    writer.write_str(xmlns)?;
-                    writer.write_str("\"")?;
-                  }
-                })
-                .unwrap(),
-            );
-
-            xmlns_attr_writer_list.push(
-                parse2(quote! {
-                  for (k, v) in &self.xmlns_map {
-                    writer.write_str(" xmlns:")?;
-                    writer.write_str(k)?;
-                    writer.write_str("=\"")?;
-                    writer.write_str(v)?;
-                    writer.write_str("\"")?;
-                  }
-                })
-                .unwrap(),
-            );
-
-            xmlns_attr_writer_list.push(
-                parse2(quote! {
-                  if let Some(mc_ignorable) = &self.mc_ignorable {
-                    writer.write_str(r#" mc:Ignorable=""#)?;
-                    writer.write_str(mc_ignorable)?;
-                    writer.write_str("\"")?;
-                  }
-                })
-                .unwrap(),
-            );
-        }
-
-        let xmlns_uri_str = &schema_namespace.uri;
-
-        let xmlns_prefix_str = &schema_namespace.prefix;
-
-        let to_xml_fn: ItemFn = if !schema_type.part.is_empty()
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || ((schema_type.base_class == "OpenXmlCompositeElement"
-                || schema_type.base_class == "CustomXmlElement"
-                || schema_type.base_class == "OpenXmlPartRootElement"
-                || schema_type.base_class == "SdtElement")
-                && (schema.target_namespace
-                    == "http://schemas.openxmlformats.org/drawingml/2006/main"
-                    || schema.target_namespace
-                        == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
-        {
-            parse2(quote! {
-              pub fn to_xml(&self) -> Result<String, std::fmt::Error> {
-                let mut writer = String::with_capacity(32);
-
-                self.write_xml(
-                  &mut writer,
-                  if let Some(xmlns) = &self.xmlns && xmlns == #xmlns_uri_str {
-                      #xmlns_prefix_str
-                  } else {
-                      ""
-                  },
-                )?;
-
-                Ok(writer)
-              }
-            })
-            .unwrap()
-        } else {
-            parse2(quote! {
-              pub fn to_xml(&self) -> Result<String, std::fmt::Error> {
-                let mut writer = String::with_capacity(32);
-
-                self.write_xml(&mut writer, "")?;
-
-                Ok(writer)
-              }
-            })
-            .unwrap()
-        };
-
-        token_stream_list.push(
-            parse2(quote! {
-              impl #struct_type {
-                #to_xml_fn
-
-                pub(crate) fn write_xml<W: std::fmt::Write>(
-                  &self,
-                  writer: &mut W,
-                  xmlns_prefix: &str,
-                ) -> Result<(), std::fmt::Error> {
-                  #xml_header_writer
-
-                  if xmlns_prefix == #type_prefix {
-                    writer.write_str(#name_start_tag)?;
-                  } else {
-                    writer.write_str(#prefixed_name_start_tag)?;
-                  }
-
-                  #( #xmlns_attr_writer_list )*
-
-                  #attr_writer
-
-                  #end_tag_writer
-
-                  #children_writer
-
-                  #end_writer
-
-                  Ok(())
-                }
-              }
-            })
-            .unwrap(),
-        );
-
-        token_stream_list.push(
-            parse2(quote! {
-              impl std::fmt::Display for #struct_type {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                  write!(f, "{}", self.to_xml()?)
-                }
-              }
-            })
-            .unwrap(),
-        );
+          }
+        });
     }
 
     Ok(quote! {
@@ -531,34 +179,184 @@ pub fn gen_serializer(
     })
 }
 
-fn gen_attr(schema: &OpenXmlSchemaTypeAttribute) -> TokenStream {
+fn gen_attr(schema: &OpenXmlSchemaTypeAttribute, attributes_ident: &Ident) -> TokenStream {
     let attr_value_ident = schema.as_name_ident();
     let attr_name_str = schema.as_name_str();
 
-    let attr_name_str_fmt = format!(" {attr_name_str}=\"");
-
     if schema.is_validator_required() {
         quote! {
-          writer.write_str(#attr_name_str_fmt)?;
-          writer.write_str(&quick_xml::escape::escape(self.#attr_value_ident.to_string()))?;
-          writer.write_char('"')?;
+          #attributes_ident.push_str(&as_xml_attribute(#attr_name_str, &quick_xml::escape::escape(self.#attr_value_ident.to_string())));
         }
     } else {
         quote! {
           if let Some(#attr_value_ident) = &self.#attr_value_ident {
-            writer.write_str(#attr_name_str_fmt)?;
-            writer.write_str(&quick_xml::escape::escape(#attr_value_ident.to_string()))?;
-            writer.write_char('"')?;
+            #attributes_ident.push_str(&as_xml_attribute(#attr_name_str, &quick_xml::escape::escape(#attr_value_ident.to_string())));
           }
         }
     }
 }
 
-fn gen_child_arm(child: &OpenXmlSchemaTypeChild, child_choice_enum_type: &Type) -> Arm {
-    let child_name_ident = child.as_last_name_ident();
+fn gen_children_match<'a>(
+    children: impl Iterator<Item = &'a OpenXmlSchemaTypeChild>,
+    child_choice_enum_type: &Type,
+    xml_inner_ident: &Ident,
+) -> Option<TokenStream> {
+    let child_arms =
+        children.map(|child| -> TokenStream {
+              let child_name_ident = child.as_last_name_ident();
 
-    parse2(quote! {
-      #child_choice_enum_type::#child_name_ident(child) => child.write_xml(writer, xmlns_prefix)?,
-    })
-    .unwrap()
+            parse_quote! {
+              #child_choice_enum_type::#child_name_ident(child) => #xml_inner_ident.push_str(&child.to_xml_string(false, with_xmlns)),
+            }
+        }).collect::<Vec<_>>();
+
+    if child_arms.is_empty() {
+        return None;
+    }
+
+    return Some(quote! {
+        for child in &self.children {
+            match child {
+                #( #child_arms )*
+            };
+        }
+    });
+}
+
+fn gen_sequence_flatten_match(
+    schema_type: &OpenXmlSchemaType,
+    xml_inner_ident: &Ident,
+) -> Result<TokenStream, BuildErrorReport> {
+    let child_map = schema_type.child_map();
+    let mut child_stmt_list: Vec<Stmt> = vec![];
+
+    for schema_type_particle in &schema_type.particle.items {
+        let child = child_map.try_get(schema_type_particle.name.as_str())?;
+        let child_name_ident = child.as_property_name_ident();
+
+        match schema_type_particle.as_occurrence() {
+            Occurrence::Required => {
+                child_stmt_list.push(
+                    parse_quote! {
+                      #xml_inner_ident.push_str(&self.#child_name_ident.to_xml_string(false, with_xmlns));
+                    },
+                );
+            }
+            Occurrence::Optional => {
+                child_stmt_list.push(parse_quote! {
+                  if let Some(#child_name_ident) = &self.#child_name_ident {
+                    #xml_inner_ident.push_str(&#child_name_ident.to_xml_string(false, with_xmlns));
+                  }
+                });
+            }
+            Occurrence::Repeated => {
+                child_stmt_list.push(parse_quote! {
+                  for child in &self.#child_name_ident {
+                    #xml_inner_ident.push_str(&child.to_xml_string(false, with_xmlns));
+                  }
+                });
+            }
+        };
+    }
+
+    return Ok(quote! {
+      #( #child_stmt_list )*
+    });
+}
+
+fn gen_inner_writer(
+    schema: &OpenXmlSchema,
+    schema_type: &OpenXmlSchemaType,
+    attributes_ident: &Ident,
+    attributes_writer: &mut Vec<TokenStream>,
+    xml_inner_ident: &Ident,
+    gen_context: &GenContext,
+) -> Result<Option<TokenStream>, BuildErrorReport> {
+    let (type_base_class, _) = schema_type.split_name();
+
+    let child_choice_enum_type: Type = parse_str(&format!(
+        "crate::schemas::{}::{}ChildChoice",
+        &schema.module_name,
+        schema_type.class_name.to_upper_camel_case()
+    ))
+    .map_err(BuildError::from)?;
+
+    match schema_type.base_class.as_str() {
+        "OpenXmlLeafElement" => return Ok(None),
+        "OpenXmlLeafTextElement" => {
+            return Ok(Some(quote! {
+              if let Some(xml_content) = &self.xml_content {
+                #xml_inner_ident.push_str(&quick_xml::escape::escape(xml_content.to_string()));
+              }
+            }));
+        }
+        "OpenXmlCompositeElement"
+        | "CustomXmlElement"
+        | "OpenXmlPartRootElement"
+        | "SdtElement" => {
+            if schema_type.children.is_empty() {
+                return Ok(None);
+            }
+
+            if schema_type.is_one_sequence_flatten() {
+                return Ok(Some(gen_sequence_flatten_match(
+                    schema_type,
+                    xml_inner_ident,
+                )?));
+            };
+
+            return Ok(gen_children_match(
+                schema_type.children.iter(),
+                &child_choice_enum_type,
+                xml_inner_ident,
+            ));
+        }
+        _ if schema_type.is_derived => {
+            let base_class_type = gen_context
+                .type_name_type_map
+                .try_get(format!("{type_base_class}/").as_str())?;
+
+            for attribute in &base_class_type.attributes {
+                attributes_writer.push(gen_attr(attribute, attributes_ident));
+            }
+
+            let mut children = schema_type
+                .children
+                .iter()
+                .chain(base_class_type.children.iter())
+                .peekable();
+
+            if children.peek().is_some() {
+                if base_class_type.base_class == "OpenXmlLeafTextElement" {
+                    return Ok(Some(quote! {
+                      if let Some(xml_content) = &self.xml_content {
+                        #xml_inner_ident.push_str(&quick_xml::escape::escape(xml_content.to_string()));
+                      }
+                    }));
+                }
+
+                return Ok(None);
+            }
+
+            if schema_type.is_one_sequence_flatten()
+                //TODO: Check if its the same without this
+                && base_class_type.composite_type == "OneSequence"
+            {
+                return Ok(Some(gen_sequence_flatten_match(
+                    schema_type,
+                    xml_inner_ident,
+                )?));
+            };
+
+            return Ok(gen_children_match(
+                children,
+                &child_choice_enum_type,
+                xml_inner_ident,
+            ));
+        }
+        _ => panic!(
+            "{:?}",
+            report!("Unhandled schema type").attach(format!("{schema_type:?}"))
+        ),
+    }
 }

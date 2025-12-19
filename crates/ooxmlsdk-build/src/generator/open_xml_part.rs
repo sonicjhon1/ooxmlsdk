@@ -2,7 +2,10 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use quote::quote;
 use rootcause::prelude::ResultExt;
-use syn::{Arm, FieldValue, Ident, ItemFn, ItemImpl, ItemStruct, Stmt, Type, parse_str, parse2};
+use syn::{
+    Arm, FieldValue, Ident, ImplItemConst, ItemFn, ItemImpl, ItemStruct, Stmt, Type, parse_quote,
+    parse_str, parse2,
+};
 
 use crate::{
     GenContext,
@@ -18,10 +21,9 @@ pub fn gen_open_xml_parts(
     let use_common_glob = gen_use_common_glob();
 
     let relationship_type_str = &part.relationship_type;
-    let relationship_type_stmt: Stmt = parse2(quote! {
-        pub const RELATIONSHIP_TYPE: &str = #relationship_type_str;
-    })
-    .unwrap();
+    let relationship_type_impl_const: ImplItemConst = parse_quote! {
+        pub const RELATIONSHIP: &str = #relationship_type_str;
+    };
 
     let part_name_raw = part.name.as_str();
     let part_struct_name_ident: Ident = parse_str(&part_name_raw.to_upper_camel_case()).unwrap();
@@ -284,24 +286,20 @@ pub fn gen_open_xml_parts(
             continue;
         }
 
+        let child_api_name_str = child.api_name.to_snake_case();
+        let child_api_name_ident: Ident = parse_str(&child_api_name_str).unwrap();
+
+        let child_name_struct_str = child.name.to_upper_camel_case();
+        let child_name_str = child.name.to_snake_case();
+        let child_name_ident: Ident = parse_str(&child_name_str).unwrap();
+
         let child_type: Type = parse_str(&format!(
-            "crate::parts::{}::{}",
-            child.name.to_snake_case(),
-            child.name.to_upper_camel_case(),
+            "crate::parts::{child_name_str}::{child_name_struct_str}",
         ))
         .unwrap();
 
-        let child_api_name_str = child.api_name.to_snake_case();
-
-        let child_api_name_ident: Ident = parse_str(&child_api_name_str).unwrap();
-
-        let child_name_str = child.name.to_snake_case();
-
-        let child_name_ident: Ident = parse_str(&child_name_str).unwrap();
-
         let relationship_type_ty: Type = parse_str(&format!(
-            "crate::parts::{}::RELATIONSHIP_TYPE",
-            child.name.to_snake_case(),
+            "crate::parts::{child_name_str}::{child_name_struct_str}::RELATIONSHIP",
         ))
         .unwrap();
 
@@ -446,9 +444,7 @@ pub fn gen_open_xml_parts(
 
                 zip.start_file("[Content_Types].xml", options).map_err(SdkError::from)?;
 
-                zip.write_all(
-                    self.content_types.to_xml().map_err(SdkError::from)?.as_bytes()
-                ).map_err(SdkError::from)?;
+                zip.write_all(&self.content_types.to_xml_bytes(true, false)).map_err(SdkError::from)?;
 
                 self.save_zip("", &mut zip, &mut entry_set)?;
 
@@ -466,8 +462,10 @@ pub fn gen_open_xml_parts(
         })
         .unwrap();
 
-        parse2(quote! {
+        parse_quote! {
             impl #part_struct_name_ident {
+                #relationship_type_impl_const
+
                 #part_new_fn
 
                 #part_new_from_file_fn
@@ -480,21 +478,21 @@ pub fn gen_open_xml_parts(
 
                 #part_save_zip_fn
             }
-        })
+        }
     } else {
-        parse2(quote! {
+        parse_quote! {
             impl #part_struct_name_ident {
+                #relationship_type_impl_const
+
                 #part_new_from_archive_fn
 
                 #part_save_zip_fn
             }
-        })
-    }.map_err(BuildError::from)?;
+        }
+    };
 
     Ok(quote! {
         #use_common_glob
-
-        #relationship_type_stmt
 
         #part_struct
 
@@ -710,8 +708,7 @@ fn gen_save_zip_fn(
                 if !entry_set.contains(&self.inner_path) {
                     zip.start_file(&self.inner_path, options).map_err(SdkError::from)?;
 
-                    zip.write_all(self.root_element.to_xml().map_err(SdkError::from)?.as_bytes())
-                        .map_err(SdkError::from)?;
+                    zip.write_all(&self.root_element.to_xml_bytes(true, false)).map_err(SdkError::from)?;
 
                     entry_set.insert(self.inner_path.to_string());
                 }
@@ -741,8 +738,7 @@ fn gen_save_zip_fn(
                 if !entry_set.contains(&self.rels_path) {
                     zip.start_file(&self.rels_path, options).map_err(SdkError::from)?;
 
-                    zip.write_all(relationships.to_xml().map_err(SdkError::from)?.as_bytes())
-                    .map_err(SdkError::from)?;
+                    zip.write_all(&relationships.to_xml_bytes(true, false)).map_err(SdkError::from)?;
 
                     entry_set.insert(self.rels_path.to_string());
                 }

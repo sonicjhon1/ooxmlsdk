@@ -1,5 +1,5 @@
 use ooxmlsdk::{
-    common::Deserializeable,
+    common::{Deserializeable, Serializeable},
     parts::{
         presentation_document::PresentationDocument, spreadsheet_document::SpreadsheetDocument,
         wordprocessing_document::WordprocessingDocument,
@@ -18,14 +18,14 @@ const SAMPLE_XML_FILE_PATH: &str = "examples/read_write_xml/samples/sheet1.xml";
 fn main() -> Result<(), Report> {
     {
         let docx = WordprocessingDocument::new_from_file(SAMPLE_DOCX_FILE_PATH)?;
-        let docx_xml = docx.main_document_part.root_element.to_xml()?;
+        let docx_xml = docx.main_document_part.root_element.to_xml_string(true, false);
         println!("{docx_xml}");
         assert!(docx.main_document_part.root_element.validate()?);
 
         let reader = BufReader::new(File::open(SAMPLE_DOCX_FILE_PATH)?);
         let reader_docx = WordprocessingDocument::new(reader)?;
         assert_eq!(
-            reader_docx.main_document_part.root_element.to_xml()?,
+            reader_docx.main_document_part.root_element.to_xml_string(true, false),
             docx_xml
         );
 
@@ -35,14 +35,14 @@ fn main() -> Result<(), Report> {
 
     {
         let pptx = PresentationDocument::new_from_file(SAMPLE_PPTX_FILE_PATH)?;
-        let pptx_xml = pptx.presentation_part.root_element.to_xml()?;
+        let pptx_xml = pptx.presentation_part.root_element.to_xml_string(true, false);
         println!("{pptx_xml}");
         assert!(pptx.presentation_part.root_element.validate()?);
 
         let reader = BufReader::new(File::open(SAMPLE_PPTX_FILE_PATH)?);
         let reader_pptx = PresentationDocument::new(reader)?;
         assert_eq!(
-            reader_pptx.presentation_part.root_element.to_xml()?,
+            reader_pptx.presentation_part.root_element.to_xml_string(true, false),
             pptx_xml
         );
 
@@ -52,13 +52,16 @@ fn main() -> Result<(), Report> {
 
     {
         let xlsx = SpreadsheetDocument::new_from_file(SAMPLE_XLSX_FILE_PATH).unwrap();
-        let xlsx_xml = xlsx.workbook_part.root_element.to_xml()?;
+        let xlsx_xml = xlsx.workbook_part.root_element.to_xml_string(true, false);
         println!("{xlsx_xml}");
         assert!(xlsx.workbook_part.root_element.validate()?);
 
         let reader = BufReader::new(File::open(SAMPLE_XLSX_FILE_PATH)?);
         let reader_xlsx = SpreadsheetDocument::new(reader)?;
-        assert_eq!(reader_xlsx.workbook_part.root_element.to_xml()?, xlsx_xml);
+        assert_eq!(
+            reader_xlsx.workbook_part.root_element.to_xml_string(true, false),
+            xlsx_xml
+        );
 
         let temp_xlsx_file = tempfile()?;
         xlsx.save(temp_xlsx_file)?;
@@ -66,7 +69,7 @@ fn main() -> Result<(), Report> {
 
     {
         let worksheet = Worksheet::from_file(SAMPLE_XML_FILE_PATH).unwrap();
-        let xml = worksheet.to_xml()?;
+        let xml = worksheet.to_xml_string(true, false);
         println!("{xml}");
     }
 
