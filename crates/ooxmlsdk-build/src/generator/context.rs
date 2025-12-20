@@ -51,14 +51,16 @@ impl<'a> GenContext<'a> {
 
             let mut open_xml_part: OpenXmlPart = serde_json::from_reader(file).unwrap();
 
-            let part_mod = entry
+            open_xml_part.module_name = entry
                 .path()
                 .file_stem()
                 .unwrap()
                 .to_string_lossy()
                 .to_snake_case();
 
-            open_xml_part.module_name = part_mod;
+            parts.retain_mut(|part| {
+                return check_office_version(&part.version);
+            });
 
             parts.push(open_xml_part);
         }
@@ -70,14 +72,40 @@ impl<'a> GenContext<'a> {
 
             let mut open_xml_schema: OpenXmlSchema = serde_json::from_reader(file).unwrap();
 
-            let schema_mod = entry
+            open_xml_schema.module_name = entry
                 .path()
                 .file_stem()
                 .unwrap()
                 .to_string_lossy()
                 .to_snake_case();
 
-            open_xml_schema.module_name = schema_mod;
+            open_xml_schema.enums.retain_mut(|schema_enum| {
+                if !check_office_version(&schema_enum.version) {
+                    return false;
+                };
+
+                schema_enum
+                    .facets
+                    .retain(|x| check_office_version(&x.version));
+
+                return true;
+            });
+
+            open_xml_schema.types.retain_mut(|schema_type| {
+                if !check_office_version(&schema_type.version) {
+                    return false;
+                };
+
+                schema_type
+                    .attributes
+                    .retain(|x| check_office_version(&x.version));
+
+                schema_type.particle.check_particle_version();
+
+                schema_type.module_name = open_xml_schema.module_name.clone();
+
+                return true;
+            });
 
             schemas.push(open_xml_schema);
         }
@@ -163,43 +191,39 @@ impl<'a> GenContext<'a> {
         )
         .unwrap();
 
-        parts.retain(|x| {
-            if !part_name_set.contains(&x.name) {
+        parts.retain_mut(|part| {
+            if !part_name_set.contains(&part.name) {
                 return false;
             }
 
-            if let Some(part_type_name) = part_type_name_map.get(x.name.as_str()) {
+            if let Some(part_type_name) = part_type_name_map.get(part.name.as_str()) {
                 let type_version = type_name_version_map.try_get(*part_type_name).unwrap();
 
-                check_office_version(&x.version) && check_office_version(type_version)
-            } else {
-                check_office_version(&x.version)
+                return check_office_version(type_version);
             }
-        });
 
-        for part in parts.iter_mut() {
             part.children.retain(|x| {
                 if x.is_data_part_reference {
                     return true;
                 }
 
-                let child_version = part_name_version_map.try_get(&x.name).unwrap();
+                if !check_office_version(part_name_version_map.try_get(&x.name).unwrap()) {
+                    return false;
+                };
 
                 if let Some(part_type_name) = part_type_name_map.get(x.name.as_str()) {
                     let type_version = type_name_version_map.try_get(*part_type_name).unwrap();
 
-                    check_office_version(child_version) && check_office_version(type_version)
-                } else {
-                    check_office_version(child_version)
-                }
+                    return check_office_version(type_version);
+                };
+
+                return true;
             });
-        }
+
+            return true;
+        });
 
         for schema in schemas.iter_mut() {
-            for schema_type in schema.types.iter_mut() {
-                schema_type.module_name = schema.module_name.clone();
-            }
-
             for schema_enum in schema.enums.iter_mut() {
                 schema_enum.module_name = schema.module_name.clone();
             }
@@ -224,30 +248,14 @@ impl<'a> GenContext<'a> {
         }
 
         for schema in schemas.iter_mut() {
-            for schema_enum in schema.enums.iter_mut() {
-                schema_enum
-                    .facets
-                    .retain(|x| check_office_version(&x.version));
-            }
-
-            schema.enums.retain(|x| check_office_version(&x.version));
-
             for schema_type in schema.types.iter_mut() {
-                schema_type
-                    .attributes
-                    .retain(|x| check_office_version(&x.version));
-
                 schema_type.children.retain(|x| {
                     let child_type_version =
                         type_name_version_map.try_get_mut(x.name.as_str()).unwrap();
 
                     check_office_version(child_type_version)
                 });
-
-                schema_type.particle.check_particle_version();
             }
-
-            schema.types.retain(|x| check_office_version(&x.version));
         }
 
         schemas.retain(|x| {
