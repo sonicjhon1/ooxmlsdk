@@ -32,7 +32,7 @@ syn = "2.0.111"
 tempfile = "3.23"
 thiserror = "2.0"
 tracing = "0.1"
-zip = { version = "6.0", default-features = false, features = ["deflate"] }
+zip = { version = "7.0", default-features = false, features = ["deflate"] }
 
 [workspace.lints.clippy]
 needless_return = "allow"
