@@ -18,14 +18,20 @@ const SAMPLE_XML_FILE_PATH: &str = "examples/read_write_xml/samples/sheet1.xml";
 fn main() -> Result<(), Report> {
     {
         let docx = WordprocessingDocument::new_from_file(SAMPLE_DOCX_FILE_PATH)?;
-        let docx_xml = docx.main_document_part.root_element.to_xml_string(true, false);
+        let docx_xml = docx
+            .main_document_part
+            .root_element
+            .to_xml_string(true, false);
         println!("{docx_xml}");
         assert!(docx.main_document_part.root_element.validate()?);
 
         let reader = BufReader::new(File::open(SAMPLE_DOCX_FILE_PATH)?);
         let reader_docx = WordprocessingDocument::new(reader)?;
         assert_eq!(
-            reader_docx.main_document_part.root_element.to_xml_string(true, false),
+            reader_docx
+                .main_document_part
+                .root_element
+                .to_xml_string(true, false),
             docx_xml
         );
 
@@ -35,14 +41,20 @@ fn main() -> Result<(), Report> {
 
     {
         let pptx = PresentationDocument::new_from_file(SAMPLE_PPTX_FILE_PATH)?;
-        let pptx_xml = pptx.presentation_part.root_element.to_xml_string(true, false);
+        let pptx_xml = pptx
+            .presentation_part
+            .root_element
+            .to_xml_string(true, false);
         println!("{pptx_xml}");
         assert!(pptx.presentation_part.root_element.validate()?);
 
         let reader = BufReader::new(File::open(SAMPLE_PPTX_FILE_PATH)?);
         let reader_pptx = PresentationDocument::new(reader)?;
         assert_eq!(
-            reader_pptx.presentation_part.root_element.to_xml_string(true, false),
+            reader_pptx
+                .presentation_part
+                .root_element
+                .to_xml_string(true, false),
             pptx_xml
         );
 
@@ -59,7 +71,10 @@ fn main() -> Result<(), Report> {
         let reader = BufReader::new(File::open(SAMPLE_XLSX_FILE_PATH)?);
         let reader_xlsx = SpreadsheetDocument::new(reader)?;
         assert_eq!(
-            reader_xlsx.workbook_part.root_element.to_xml_string(true, false),
+            reader_xlsx
+                .workbook_part
+                .root_element
+                .to_xml_string(true, false),
             xlsx_xml
         );
 

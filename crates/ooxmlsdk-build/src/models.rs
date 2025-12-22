@@ -91,7 +91,7 @@ pub struct OpenXmlSchemaType {
 
 impl OpenXmlSchemaType {
     #[inline(always)]
-     pub fn is_one_sequence_flatten(&self) -> bool {
+    pub fn is_one_sequence_flatten(&self) -> bool {
         (self.composite_type == "OneSequence" || self.particle.kind == "Sequence")
             && self
                 .particle
