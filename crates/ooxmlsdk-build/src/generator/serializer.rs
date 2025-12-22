@@ -105,7 +105,6 @@ fn gen_schema_type(
           }
 
           if let Some(mc_ignorable) = &self.mc_ignorable {
-            //TODO: Check if it should be Ignorable or ignorable
             #attributes_ident.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
           }
         })
@@ -119,7 +118,7 @@ fn gen_schema_type(
               #[allow(unused_variables)]
               fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
                   let mut #attributes_ident = String::with_capacity(
-                    const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 64 },
+                    const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 64 },
                   );
 
                   #xml_tag_attributes_xmlns_inner

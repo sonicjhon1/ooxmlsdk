@@ -261,7 +261,7 @@ impl Serializeable for CoreProperties {
 
     fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
-            const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 32 },
+            const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
         );
 
         if needs_xmlns && let Some(xmlns) = &self.xmlns {
@@ -273,7 +273,7 @@ impl Serializeable for CoreProperties {
         }
 
         if let Some(mc_ignorable) = &self.mc_ignorable {
-            attributes.push_str(&as_xml_attribute("mc:ignorable", mc_ignorable));
+            attributes.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
         }
 
         return Some(attributes);
