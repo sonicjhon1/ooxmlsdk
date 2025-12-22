@@ -1,14 +1,15 @@
 use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use syn::{Ident, ItemEnum, Type, Variant, parse_str, parse2};
 
 use crate::{
     error::*,
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::{
-        Occurrence, OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
-        OpenXmlSchemaTypeChild,
+        Occurrence, OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
+        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
     },
     utils::HashMapOpsError,
 };
@@ -16,203 +17,221 @@ use crate::{
 pub fn gen_open_xml_schemas(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
-) -> Result<TokenStream, BuildErrorReport> {
-    let mut token_stream_list: Vec<TokenStream> = vec![];
+) -> Result<String, BuildErrorReport> {
+    let mut contents = String::with_capacity(const { 128 * 1024 });
 
+    contents.push_str(
+        &schema
+            .types
+            .par_iter()
+            .map(|schema_type| gen_schema_type(schema, schema_type, gen_context))
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n"),
+    );
+
+    contents.push_str(
+        &schema
+            .enums
+            .par_iter()
+            .map(gen_schema_enum)
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n"),
+    );
+
+    Ok(contents)
+}
+
+fn gen_schema_type(
+    schema: &OpenXmlSchema,
+    schema_type: &OpenXmlSchemaType,
+    gen_context: &GenContext,
+) -> Result<String, BuildErrorReport> {
     let schema_namespace = gen_context
         .uri_namespace_map
         .try_get(schema.target_namespace.as_str())?;
 
-    for schema_enum in &schema.enums {
-        let enum_name_ident: Ident = parse_str(&schema_enum.name.to_upper_camel_case()).unwrap();
+    let (type_base_class, type_prefixed_name) = schema_type.split_name();
 
-        let mut variants: Vec<Variant> = vec![];
+    let mut fields: Vec<TokenStream> = vec![];
 
-        for (i, schema_enum_facet) in schema_enum.facets.iter().enumerate() {
-            let variant_ident = schema_enum_facet.as_variant_ident();
+    let mut child_choice_enum_option: Option<ItemEnum> = None;
 
-            if i == 0 {
-                variants.push(
-                    parse2(quote! {
-                        #[default]
-                        #variant_ident
-                    })
-                    .unwrap(),
-                );
-            } else {
-                variants.push(
-                    parse2(quote! {
-                        #variant_ident
-                    })
-                    .unwrap(),
-                );
-            }
+    if schema_type.base_class == "OpenXmlLeafTextElement" {
+        for attr in &schema_type.attributes {
+            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
         }
 
-        token_stream_list.push(quote! {
-            #[derive(Clone, Debug, Default)]
-            pub enum #enum_name_ident {
-                #( #variants, )*
+        let simple_type_name = gen_xml_content_type(schema_type, schema_namespace, gen_context)?;
+
+        fields.push(quote! {
+            pub xml_content: Option<#simple_type_name>,
+        });
+    } else if schema_type.base_class == "OpenXmlLeafElement" {
+        for attr in &schema_type.attributes {
+            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+        }
+    } else if schema_type.base_class == "OpenXmlCompositeElement"
+        || schema_type.base_class == "CustomXmlElement"
+        || schema_type.base_class == "OpenXmlPartRootElement"
+        || schema_type.base_class == "SdtElement"
+    {
+        if !schema_type.part.is_empty()
+            || schema_type.base_class == "OpenXmlPartRootElement"
+            || schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/main"
+            || schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/picture"
+        {
+            fields.push(quote! {
+                pub xmlns: Option<String>,
+            });
+
+            fields.push(quote! {
+                pub xmlns_map: std::collections::HashMap<String, String>,
+            });
+
+            fields.push(quote! {
+                pub mc_ignorable: Option<String>,
+            });
+        }
+
+        for attr in &schema_type.attributes {
+            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+        }
+
+        if schema_type.is_one_sequence_flatten() {
+            let one_sequence_fields =
+                gen_one_sequence_fields(schema_type, schema_namespace, gen_context)?;
+
+            fields.extend(one_sequence_fields);
+        } else {
+            let (field_option, enum_option) = gen_children(
+                &schema_type.class_name,
+                &schema_type.children,
+                schema_namespace,
+                gen_context,
+            )?;
+
+            if let Some(field) = field_option {
+                fields.push(field);
             }
-        })
-    }
 
-    for schema_type in &schema.types {
-        let (type_base_class, type_prefixed_name) = schema_type.split_name();
+            child_choice_enum_option = enum_option;
+        }
+    } else if schema_type.is_derived {
+        let base_class_type = gen_context
+            .type_name_type_map
+            .try_get(format!("{type_base_class}/").as_str())?;
 
-        let mut fields: Vec<TokenStream> = vec![];
+        for attr in &schema_type.attributes {
+            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+        }
 
-        let mut child_choice_enum_option: Option<ItemEnum> = None;
+        for attr in &base_class_type.attributes {
+            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+        }
 
-        if schema_type.base_class == "OpenXmlLeafTextElement" {
-            for attr in &schema_type.attributes {
-                fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+        if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+        {
+            let one_sequence_fields =
+                gen_one_sequence_fields(schema_type, schema_namespace, gen_context)?;
+
+            fields.extend(one_sequence_fields);
+        } else {
+            let (field_option, enum_option) = gen_children(
+                &schema_type.class_name,
+                &schema_type.children,
+                schema_namespace,
+                gen_context,
+            )?;
+
+            if let Some(field) = field_option {
+                fields.push(field);
             }
 
+            child_choice_enum_option = enum_option;
+        }
+
+        if schema_type.children.is_empty() && base_class_type.base_class == "OpenXmlLeafTextElement"
+        {
             let simple_type_name =
-                gen_xml_content_type(schema_type, schema_namespace, gen_context)?;
+                gen_xml_content_type(base_class_type, schema_namespace, gen_context)?;
 
             fields.push(quote! {
                 pub xml_content: Option<#simple_type_name>,
             });
-        } else if schema_type.base_class == "OpenXmlLeafElement" {
-            for attr in &schema_type.attributes {
-                fields.push(gen_attr(attr, schema_namespace, gen_context)?);
-            }
-        } else if schema_type.base_class == "OpenXmlCompositeElement"
-            || schema_type.base_class == "CustomXmlElement"
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || schema_type.base_class == "SdtElement"
-        {
-            if !schema_type.part.is_empty()
-                || schema_type.base_class == "OpenXmlPartRootElement"
-                || schema.target_namespace
-                    == "http://schemas.openxmlformats.org/drawingml/2006/main"
-                || schema.target_namespace
-                    == "http://schemas.openxmlformats.org/drawingml/2006/picture"
-            {
-                fields.push(quote! {
-                    pub xmlns: Option<String>,
-                });
-
-                fields.push(quote! {
-                    pub xmlns_map: std::collections::HashMap<String, String>,
-                });
-
-                fields.push(quote! {
-                    pub mc_ignorable: Option<String>,
-                });
-            }
-
-            for attr in &schema_type.attributes {
-                fields.push(gen_attr(attr, schema_namespace, gen_context)?);
-            }
-
-            if schema_type.is_one_sequence_flatten() {
-                let one_sequence_fields =
-                    gen_one_sequence_fields(schema_type, schema_namespace, gen_context)?;
-
-                fields.extend(one_sequence_fields);
-            } else {
-                let (field_option, enum_option) = gen_children(
-                    &schema_type.class_name,
-                    &schema_type.children,
-                    schema_namespace,
-                    gen_context,
-                )?;
-
-                if let Some(field) = field_option {
-                    fields.push(field);
-                }
-
-                child_choice_enum_option = enum_option;
-            }
-        } else if schema_type.is_derived {
-            let base_class_type = gen_context
-                .type_name_type_map
-                .try_get(format!("{type_base_class}/").as_str())?;
-
-            for attr in &schema_type.attributes {
-                fields.push(gen_attr(attr, schema_namespace, gen_context)?);
-            }
-
-            for attr in &base_class_type.attributes {
-                fields.push(gen_attr(attr, schema_namespace, gen_context)?);
-            }
-
-            if schema_type.is_one_sequence_flatten()
-                && base_class_type.composite_type == "OneSequence"
-            {
-                let one_sequence_fields =
-                    gen_one_sequence_fields(schema_type, schema_namespace, gen_context)?;
-
-                fields.extend(one_sequence_fields);
-            } else {
-                let (field_option, enum_option) = gen_children(
-                    &schema_type.class_name,
-                    &schema_type.children,
-                    schema_namespace,
-                    gen_context,
-                )?;
-
-                if let Some(field) = field_option {
-                    fields.push(field);
-                }
-
-                child_choice_enum_option = enum_option;
-            }
-
-            if schema_type.children.is_empty()
-                && base_class_type.base_class == "OpenXmlLeafTextElement"
-            {
-                let simple_type_name =
-                    gen_xml_content_type(base_class_type, schema_namespace, gen_context)?;
-
-                fields.push(quote! {
-                    pub xml_content: Option<#simple_type_name>,
-                });
-            }
-        } else {
-            unreachable!("{schema_type:?}");
         }
-
-        let struct_name_ident: Ident =
-            parse_str(&schema_type.class_name.to_upper_camel_case()).unwrap();
-
-        let summary_doc = format!(" {}", schema_type.summary);
-
-        let version_doc = if schema_type.version.is_empty() {
-            " Available in Office2007 and above.".to_string()
-        } else {
-            format!(" Available in {} and above.", schema_type.version)
-        };
-
-        let qualified_doc = if schema_type.name.ends_with('/') {
-            " When the object is serialized out as xml, it's qualified name is .".to_string()
-        } else {
-            format!(
-                " When the object is serialized out as xml, it's qualified name is {type_prefixed_name}.",
-            )
-        };
-
-        token_stream_list.push(quote! {
-            #[doc = #summary_doc]
-            #[doc = ""]
-            #[doc = #version_doc]
-            #[doc = ""]
-            #[doc = #qualified_doc]
-            #[derive(Clone, Debug, Default)]
-            pub struct #struct_name_ident {
-                #( #fields )*
-            }
-
-            #child_choice_enum_option
-        });
+    } else {
+        unreachable!("{schema_type:?}");
     }
 
-    Ok(quote! {
-        #( #token_stream_list )*
-    })
+    let struct_name_ident: Ident =
+        parse_str(&schema_type.class_name.to_upper_camel_case()).unwrap();
+
+    let summary_doc = format!(" {}", schema_type.summary);
+
+    let version_doc = if schema_type.version.is_empty() {
+        " Available in Office2007 and above.".to_string()
+    } else {
+        format!(" Available in {} and above.", schema_type.version)
+    };
+
+    let qualified_doc = if schema_type.name.ends_with('/') {
+        " When the object is serialized out as xml, it's qualified name is .".to_string()
+    } else {
+        format!(
+            " When the object is serialized out as xml, it's qualified name is {type_prefixed_name}.",
+        )
+    };
+
+    return Ok(quote! {
+        #[doc = #summary_doc]
+        #[doc = ""]
+        #[doc = #version_doc]
+        #[doc = ""]
+        #[doc = #qualified_doc]
+        #[derive(Clone, Debug, Default)]
+        pub struct #struct_name_ident {
+            #( #fields )*
+        }
+
+        #child_choice_enum_option
+    }
+    .to_string());
+}
+
+fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> Result<String, BuildErrorReport> {
+    let enum_name_ident: Ident =
+        parse_str(&schema_enum.name.to_upper_camel_case()).map_err(BuildError::from)?;
+
+    let mut variants: Vec<Variant> = vec![];
+
+    for (i, schema_enum_facet) in schema_enum.facets.iter().enumerate() {
+        let variant_ident = schema_enum_facet.as_variant_ident();
+
+        if i == 0 {
+            variants.push(
+                parse2(quote! {
+                    #[default]
+                    #variant_ident
+                })
+                .unwrap(),
+            );
+        } else {
+            variants.push(
+                parse2(quote! {
+                    #variant_ident
+                })
+                .unwrap(),
+            );
+        }
+    }
+
+    return Ok(quote! {
+        #[derive(Clone, Debug, Default)]
+        pub enum #enum_name_ident {
+            #( #variants, )*
+        }
+    }
+    .to_string());
 }
 
 fn gen_attr(

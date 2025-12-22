@@ -1,76 +1,95 @@
 use heck::ToUpperCamelCase;
-use proc_macro2::TokenStream;
 use quote::quote;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashMap;
-use syn::{Arm, Ident, ItemImpl, Stmt, Type, parse_str, parse2};
+use syn::{Arm, Ident, Stmt, Type, parse_str, parse2};
 
 use crate::{
     GenContext,
     error::*,
-    models::{Occurrence, OpenXmlSchema, OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild},
+    models::{
+        Occurrence, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
+        OpenXmlSchemaTypeChild,
+    },
     utils::HashMapOpsError,
 };
 
 pub fn gen_validators(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
-) -> Result<TokenStream, BuildErrorReport> {
-    let mut token_stream_list: Vec<ItemImpl> = vec![];
+) -> Result<String, BuildErrorReport> {
+    let mut contents = String::with_capacity(const { 128 * 1024 });
 
-    for schema_type in &schema.types {
-        if schema_type.is_abstract {
-            continue;
-        }
+    contents.push_str(
+        &schema
+            .types
+            .par_iter()
+            .map(|schema_type| gen_schema_type(schema, schema_type, gen_context))
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n"),
+    );
 
-        let struct_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            &schema.module_name,
-            schema_type.class_name.to_upper_camel_case()
-        ))
-        .unwrap();
+    Ok(contents)
+}
 
-        let (type_base_class, _) = schema_type.split_name();
+fn gen_schema_type(
+    schema: &OpenXmlSchema,
+    schema_type: &OpenXmlSchemaType,
+    gen_context: &GenContext,
+) -> Result<String, BuildErrorReport> {
+    if schema_type.is_abstract {
+        return Ok(String::with_capacity(0));
+    }
 
-        let mut attr_validator_stmt_list: Vec<Stmt> = vec![];
+    let struct_type: Type = parse_str(&format!(
+        "crate::schemas::{}::{}",
+        &schema.module_name,
+        schema_type.class_name.to_upper_camel_case()
+    ))
+    .unwrap();
 
-        let mut children_validator_stmt_list: Vec<Stmt> = vec![];
+    let (type_base_class, _) = schema_type.split_name();
 
-        for attr in &schema_type.attributes {
-            attr_validator_stmt_list.extend(gen_attr_validator_stmt_list(attr));
-        }
+    let mut attr_validator_stmt_list: Vec<Stmt> = vec![];
 
-        if schema_type.base_class == "OpenXmlLeafTextElement"
-            || schema_type.base_class == "OpenXmlLeafElement"
-        {
-        } else if schema_type.base_class == "OpenXmlCompositeElement"
-            || schema_type.base_class == "CustomXmlElement"
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || schema_type.base_class == "SdtElement"
-        {
-            if schema_type.is_one_sequence_flatten() {
-                let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
+    let mut children_validator_stmt_list: Vec<Stmt> = vec![];
 
-                for child in &schema_type.children {
-                    child_map.insert(&child.name, child);
-                }
+    for attr in &schema_type.attributes {
+        attr_validator_stmt_list.extend(gen_attr_validator_stmt_list(attr));
+    }
 
-                for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
-                    let child_name_ident = child.as_property_name_ident();
+    if schema_type.base_class == "OpenXmlLeafTextElement"
+        || schema_type.base_class == "OpenXmlLeafElement"
+    {
+    } else if schema_type.base_class == "OpenXmlCompositeElement"
+        || schema_type.base_class == "CustomXmlElement"
+        || schema_type.base_class == "OpenXmlPartRootElement"
+        || schema_type.base_class == "SdtElement"
+    {
+        if schema_type.is_one_sequence_flatten() {
+            let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
 
-                    match schema_type_particle.as_occurrence() {
-                        Occurrence::Required => {
-                            children_validator_stmt_list.push(
-                                parse2(quote! {
-                                    if !self.#child_name_ident.validate()? {
-                                        return Ok(false);
-                                    }
-                                })
-                                .unwrap(),
-                            );
-                        }
-                        Occurrence::Optional => {
-                            children_validator_stmt_list.push(
+            for child in &schema_type.children {
+                child_map.insert(&child.name, child);
+            }
+
+            for schema_type_particle in &schema_type.particle.items {
+                let child = child_map.try_get(schema_type_particle.name.as_str())?;
+                let child_name_ident = child.as_property_name_ident();
+
+                match schema_type_particle.as_occurrence() {
+                    Occurrence::Required => {
+                        children_validator_stmt_list.push(
+                            parse2(quote! {
+                                if !self.#child_name_ident.validate()? {
+                                    return Ok(false);
+                                }
+                            })
+                            .unwrap(),
+                        );
+                    }
+                    Occurrence::Optional => {
+                        children_validator_stmt_list.push(
                                 parse2(quote! {
                                     if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
                                         return Ok(false);
@@ -78,100 +97,99 @@ pub fn gen_validators(
                                 })
                                 .unwrap(),
                         );
-                        }
-                        Occurrence::Repeated => {
-                            children_validator_stmt_list.push(
-                                parse2(quote! {
-                                    for child in &self.#child_name_ident {
-                                        if !child.validate()? {
-                                            return Ok(false);
-                                        }
-                                    }
-                                })
-                                .unwrap(),
-                            );
-                        }
                     }
-                }
-            } else {
-                let child_choice_enum_type: Type = parse_str(&format!(
-                    "crate::schemas::{}::{}ChildChoice",
-                    &schema.module_name,
-                    schema_type.class_name.to_upper_camel_case()
-                ))
-                .map_err(BuildError::from)?;
-
-                let mut child_match_arm_list: Vec<Arm> = vec![];
-
-                for child in &schema_type.children {
-                    let child_name_list: Vec<&str> = child.name.split('/').collect();
-
-                    let child_rename_ser_str = child_name_list
-                        .last()
-                        .ok_or(format!("{:?}", child.name))
-                        .unwrap();
-
-                    let child_variant_name_ident: Ident =
-                        parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
-
-                    child_match_arm_list.push(
-                        parse2(quote! {
-                            #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
-                                return Ok(false);
-                            },
-                        })
-                        .unwrap(),
-                    );
-                }
-
-                if !schema_type.children.is_empty() {
-                    children_validator_stmt_list.push(
-                        parse2(quote! {
-                            for child in &self.children {
-                                match child {
-                                    #( #child_match_arm_list )*
-                                }
-                            }
-                        })
-                        .unwrap(),
-                    );
-                }
-            }
-        } else if schema_type.is_derived {
-            let base_class_type = gen_context
-                .type_name_type_map
-                .try_get(format!("{type_base_class}/").as_str())?;
-
-            for attr in &base_class_type.attributes {
-                attr_validator_stmt_list.extend(gen_attr_validator_stmt_list(attr));
-            }
-
-            if schema_type.is_one_sequence_flatten()
-                && base_class_type.composite_type == "OneSequence"
-            {
-                let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
-
-                for child in &schema_type.children {
-                    child_map.insert(&child.name, child);
-                }
-
-                for schema_type_particle in &schema_type.particle.items {
-                    let child = child_map.try_get(schema_type_particle.name.as_str())?;
-                    let child_name_ident = child.as_property_name_ident();
-
-                    match schema_type_particle.as_occurrence() {
-                        Occurrence::Required => {
-                            children_validator_stmt_list.push(
-                                parse2(quote! {
-                                    if !self.#child_name_ident.validate()? {
+                    Occurrence::Repeated => {
+                        children_validator_stmt_list.push(
+                            parse2(quote! {
+                                for child in &self.#child_name_ident {
+                                    if !child.validate()? {
                                         return Ok(false);
                                     }
-                                })
-                                .unwrap(),
-                            );
+                                }
+                            })
+                            .unwrap(),
+                        );
+                    }
+                }
+            }
+        } else {
+            let child_choice_enum_type: Type = parse_str(&format!(
+                "crate::schemas::{}::{}ChildChoice",
+                &schema.module_name,
+                schema_type.class_name.to_upper_camel_case()
+            ))
+            .map_err(BuildError::from)?;
+
+            let mut child_match_arm_list: Vec<Arm> = vec![];
+
+            for child in &schema_type.children {
+                let child_name_list: Vec<&str> = child.name.split('/').collect();
+
+                let child_rename_ser_str = child_name_list
+                    .last()
+                    .ok_or(format!("{:?}", child.name))
+                    .unwrap();
+
+                let child_variant_name_ident: Ident =
+                    parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
+
+                child_match_arm_list.push(
+                    parse2(quote! {
+                        #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
+                            return Ok(false);
+                        },
+                    })
+                    .unwrap(),
+                );
+            }
+
+            if !schema_type.children.is_empty() {
+                children_validator_stmt_list.push(
+                    parse2(quote! {
+                        for child in &self.children {
+                            match child {
+                                #( #child_match_arm_list )*
+                            }
                         }
-                        Occurrence::Optional => {
-                            children_validator_stmt_list.push(
+                    })
+                    .unwrap(),
+                );
+            }
+        }
+    } else if schema_type.is_derived {
+        let base_class_type = gen_context
+            .type_name_type_map
+            .try_get(format!("{type_base_class}/").as_str())?;
+
+        for attr in &base_class_type.attributes {
+            attr_validator_stmt_list.extend(gen_attr_validator_stmt_list(attr));
+        }
+
+        if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+        {
+            let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
+
+            for child in &schema_type.children {
+                child_map.insert(&child.name, child);
+            }
+
+            for schema_type_particle in &schema_type.particle.items {
+                let child = child_map.try_get(schema_type_particle.name.as_str())?;
+                let child_name_ident = child.as_property_name_ident();
+
+                match schema_type_particle.as_occurrence() {
+                    Occurrence::Required => {
+                        children_validator_stmt_list.push(
+                            parse2(quote! {
+                                if !self.#child_name_ident.validate()? {
+                                    return Ok(false);
+                                }
+                            })
+                            .unwrap(),
+                        );
+                    }
+                    Occurrence::Optional => {
+                        children_validator_stmt_list.push(
                                 parse2(quote! {
                                     if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
                                         return Ok(false);
@@ -179,88 +197,81 @@ pub fn gen_validators(
                                 })
                                 .unwrap(),
                             );
-                        }
-                        Occurrence::Repeated => {
-                            children_validator_stmt_list.push(
-                                parse2(quote! {
-                                    for child in &self.#child_name_ident {
-                                        if !child.validate()? {
-                                            return Ok(false);
-                                        }
-                                    }
-                                })
-                                .unwrap(),
-                            );
-                        }
                     }
-                }
-            } else {
-                let child_choice_enum_type: Type = parse_str(&format!(
-                    "crate::schemas::{}::{}ChildChoice",
-                    &schema.module_name,
-                    schema_type.class_name.to_upper_camel_case()
-                ))
-                .unwrap();
-
-                let mut child_match_arm_list: Vec<Arm> = vec![];
-
-                for child in &schema_type.children {
-                    let child_name_list: Vec<&str> = child.name.split('/').collect();
-
-                    let child_rename_ser_str = child_name_list
-                        .last()
-                        .ok_or(format!("{:?}", child.name))
-                        .unwrap();
-
-                    let child_variant_name_ident: Ident =
-                        parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
-
-                    child_match_arm_list.push(
-                        parse2(quote! {
-                            #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
-                                return Ok(false);
-                            },
-                        })
-                        .unwrap(),
-                    );
-                }
-
-                if !schema_type.children.is_empty() {
-                    children_validator_stmt_list.push(
-                        parse2(quote! {
-                          for child in &self.children {
-                            match child {
-                              #( #child_match_arm_list )*
-                            }
-                          }
-                        })
-                        .unwrap(),
-                    );
+                    Occurrence::Repeated => {
+                        children_validator_stmt_list.push(
+                            parse2(quote! {
+                                for child in &self.#child_name_ident {
+                                    if !child.validate()? {
+                                        return Ok(false);
+                                    }
+                                }
+                            })
+                            .unwrap(),
+                        );
+                    }
                 }
             }
         } else {
-            panic!("{schema_type:?}");
+            let child_choice_enum_type: Type = parse_str(&format!(
+                "crate::schemas::{}::{}ChildChoice",
+                &schema.module_name,
+                schema_type.class_name.to_upper_camel_case()
+            ))
+            .unwrap();
+
+            let mut child_match_arm_list: Vec<Arm> = vec![];
+
+            for child in &schema_type.children {
+                let child_name_list: Vec<&str> = child.name.split('/').collect();
+
+                let child_rename_ser_str = child_name_list
+                    .last()
+                    .ok_or(format!("{:?}", child.name))
+                    .unwrap();
+
+                let child_variant_name_ident: Ident =
+                    parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
+
+                child_match_arm_list.push(
+                    parse2(quote! {
+                        #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
+                            return Ok(false);
+                        },
+                    })
+                    .unwrap(),
+                );
+            }
+
+            if !schema_type.children.is_empty() {
+                children_validator_stmt_list.push(
+                    parse2(quote! {
+                      for child in &self.children {
+                        match child {
+                          #( #child_match_arm_list )*
+                        }
+                      }
+                    })
+                    .unwrap(),
+                );
+            }
         }
-
-        token_stream_list.push(
-            parse2(quote! {
-              impl #struct_type {
-                pub fn validate(&self) -> Result<bool, crate::common::SdkErrorReport> {
-                  #( #attr_validator_stmt_list )*
-
-                  #( #children_validator_stmt_list )*
-
-                  Ok(true)
-                }
-              }
-            })
-            .unwrap(),
-        );
+    } else {
+        panic!("{schema_type:?}");
     }
 
-    Ok(quote! {
-      #( #token_stream_list )*
-    })
+    return Ok(quote! {
+      impl #struct_type {
+        pub fn validate(&self) -> Result<bool, crate::common::SdkErrorReport> {
+          #( #attr_validator_stmt_list )*
+
+          #( #children_validator_stmt_list )*
+
+          Ok(true)
+        }
+      }
+    }
+    .to_string());
 }
 
 fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt> {

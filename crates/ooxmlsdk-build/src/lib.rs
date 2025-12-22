@@ -1,6 +1,5 @@
 #![feature(trim_prefix_suffix)]
 
-use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use rayon::{
     iter::{IntoParallelRefIterator, ParallelIterator},
@@ -189,9 +188,9 @@ pub(crate) fn write_schemas(
         .par_iter()
         .map(|schema| {
             return generate_pub_item_mod(
-                gen_open_xml_schemas(schema, gen_context)?,
                 &out_dir,
                 &schema.module_name,
+                &gen_open_xml_schemas(schema, gen_context)?,
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -214,9 +213,9 @@ pub(crate) fn write_deserializers(
         .iter()
         .map(|schema| {
             return generate_pub_item_mod(
-                gen_deserializers(schema, gen_context)?,
                 out_dir,
                 &schema.module_name,
+                &gen_deserializers(schema, gen_context)?,
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -239,9 +238,9 @@ pub(crate) fn write_serializers(
         .iter()
         .map(|schema| {
             return generate_pub_item_mod(
-                gen_serializer(schema, gen_context)?,
                 out_dir,
                 &schema.module_name,
+                &gen_serializer(schema, gen_context)?,
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -267,9 +266,9 @@ pub(crate) fn write_parts(
         .par_iter()
         .map(|part| {
             return generate_pub_item_mod(
-                gen_open_xml_parts(part, gen_context)?,
                 out_dir,
                 &part.module_name,
+                &gen_open_xml_parts(part, gen_context)?,
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -295,9 +294,9 @@ pub(crate) fn write_validators(
         .par_iter()
         .map(|part| {
             return generate_pub_item_mod(
-                gen_validators(part, gen_context)?,
                 out_dir,
                 &part.module_name,
+                &gen_validators(part, gen_context)?,
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -309,13 +308,13 @@ pub(crate) fn write_validators(
 }
 
 pub(crate) fn generate_pub_item_mod(
-    token_stream: TokenStream,
     directory: &Path,
     module_name: &str,
+    module_content: &str,
 ) -> Result<String, BuildErrorReport> {
     fs::write(
         directory.join(module_name).with_extension("rs"),
-        token_stream.to_string(),
+        module_content,
     )
     .map_err(BuildError::from)?;
 

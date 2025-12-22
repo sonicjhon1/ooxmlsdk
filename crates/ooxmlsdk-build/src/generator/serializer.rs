@@ -1,6 +1,7 @@
 use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::quote;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::report;
 use syn::{Ident, ImplItemFn, Stmt, Type, parse_quote, parse_str};
 
@@ -8,8 +9,8 @@ use crate::{
     GenContext,
     error::*,
     models::{
-        Occurrence, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
-        OpenXmlSchemaTypeChild,
+        Occurrence, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
+        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
     },
     utils::{HashMapOpsError, gen_use_common_glob},
 };
@@ -17,166 +18,190 @@ use crate::{
 pub fn gen_serializer(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
-) -> Result<TokenStream, BuildErrorReport> {
-    let mut token_stream_list: Vec<TokenStream> = Vec::with_capacity(schema.types.len() + schema.enums.len());
+) -> Result<String, BuildErrorReport> {
+    let mut contents = String::with_capacity(const { 128 * 1024 });
 
     if !schema.types.is_empty() {
-        token_stream_list.push(gen_use_common_glob());
+        contents.push_str(&gen_use_common_glob().to_string());
     }
 
-    for schema_type in &schema.types {
-        if schema_type.is_abstract {
-            continue;
-        }
+    contents.push_str(
+        &schema
+            .types
+            .par_iter()
+            .map(|schema_type| gen_schema_type(schema, schema_type, gen_context))
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n"),
+    );
 
-        let struct_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            &schema.module_name,
-            schema_type.class_name.to_upper_camel_case()
-        ))
-        .unwrap();
+    contents.push_str(
+        &schema
+            .enums
+            .par_iter()
+            .map(|schema_enum| gen_schema_enum(schema, schema_enum))
+            .collect::<Result<Vec<_>, BuildErrorReport>>()?
+            .join("\n"),
+    );
 
-        let (_, type_prefixed_name) = schema_type.split_name();
-        let (_, type_name) = schema_type.split_last_name();
+    Ok(contents)
+}
 
-        let attributes_ident = parse_quote!(attributes);
-        let mut xml_tag_attributes_inner: Vec<TokenStream> = vec![];
-        for attribute in &schema_type.attributes {
-            xml_tag_attributes_inner.push(gen_attr(attribute, &attributes_ident));
-        }
+fn gen_schema_type(
+    schema: &OpenXmlSchema,
+    schema_type: &OpenXmlSchemaType,
+    gen_context: &GenContext,
+) -> Result<String, BuildErrorReport> {
+    if schema_type.is_abstract {
+        return Ok(String::with_capacity(0));
+    }
 
-        let xml_inner_ident = parse_quote!(xml);
-        let xml_inner_writer = gen_inner_writer(
-            schema,
-            schema_type,
-            &attributes_ident,
-            &mut xml_tag_attributes_inner,
-            &xml_inner_ident,
-            gen_context,
-        )?;
+    let struct_type: Type = parse_str(&format!(
+        "crate::schemas::{}::{}",
+        &schema.module_name,
+        schema_type.class_name.to_upper_camel_case()
+    ))
+    .unwrap();
 
-        // TODO: Is this needed?
-        // let xml_needs_header =
-        //     !schema_type.part.is_empty() || schema_type.base_class == "OpenXmlPartRootElement";
+    let (_, type_prefixed_name) = schema_type.split_name();
+    let (_, type_name) = schema_type.split_last_name();
 
-        let xml_tag_attributes_xmlns_inner: Option<TokenStream> = if !schema_type.part.is_empty()
+    let attributes_ident = parse_quote!(attributes);
+    let mut xml_tag_attributes_inner: Vec<TokenStream> = vec![];
+    for attribute in &schema_type.attributes {
+        xml_tag_attributes_inner.push(gen_attr(attribute, &attributes_ident));
+    }
+
+    let xml_inner_ident = parse_quote!(xml);
+    let xml_inner_writer = gen_inner_writer(
+        schema,
+        schema_type,
+        &attributes_ident,
+        &mut xml_tag_attributes_inner,
+        &xml_inner_ident,
+        gen_context,
+    )?;
+
+    // TODO: Is this needed?
+    // let xml_needs_header =
+    //     !schema_type.part.is_empty() || schema_type.base_class == "OpenXmlPartRootElement";
+
+    let xml_tag_attributes_xmlns_inner = if !schema_type.part.is_empty()
+        || schema_type.base_class == "OpenXmlPartRootElement"
+        || ((schema_type.base_class == "OpenXmlCompositeElement"
+            || schema_type.base_class == "CustomXmlElement"
             || schema_type.base_class == "OpenXmlPartRootElement"
-            || ((schema_type.base_class == "OpenXmlCompositeElement"
-                || schema_type.base_class == "CustomXmlElement"
-                || schema_type.base_class == "OpenXmlPartRootElement"
-                || schema_type.base_class == "SdtElement")
-                && (schema.target_namespace
-                    == "http://schemas.openxmlformats.org/drawingml/2006/main"
-                    || schema.target_namespace
-                        == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
-        {
-            Some(quote! {
-              if needs_xmlns && let Some(xmlns) = &self.xmlns {
-                #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
+            || schema_type.base_class == "SdtElement")
+            && (schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/main"
+                || schema.target_namespace
+                    == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
+    {
+        Some(quote! {
+          if needs_xmlns && let Some(xmlns) = &self.xmlns {
+            #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
+          }
+
+          for (key, value) in &self.xmlns_map {
+            #attributes_ident.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
+          }
+
+          if let Some(mc_ignorable) = &self.mc_ignorable {
+            //TODO: Check if it should be Ignorable or ignorable
+            #attributes_ident.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
+          }
+        })
+    } else {
+        None
+    };
+
+    let xml_tag_attributes: ImplItemFn =
+        if xml_tag_attributes_xmlns_inner.is_some() || !xml_tag_attributes_inner.is_empty() {
+            parse_quote! {
+              #[allow(unused_variables)]
+              fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+                  let mut #attributes_ident = String::with_capacity(
+                    const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 64 },
+                  );
+
+                  #xml_tag_attributes_xmlns_inner
+
+                  #( #xml_tag_attributes_inner )*
+
+                  return Some(#attributes_ident);
               }
-
-              for (key, value) in &self.xmlns_map {
-                #attributes_ident.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
-              }
-
-              if let Some(mc_ignorable) = &self.mc_ignorable {
-                //TODO: Check if it should be Ignorable or ignorable
-                #attributes_ident.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
-              }
-            })
-        } else {
-            None
-        };
-
-        let xml_tag_attributes: ImplItemFn =
-            if xml_tag_attributes_xmlns_inner.is_some() || !xml_tag_attributes_inner.is_empty() {
-                parse_quote! {
-                  #[allow(unused_variables)]
-                  fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
-                      let mut #attributes_ident = String::with_capacity(
-                        const { "xmlns".len() + "xmlns:".len() + "mc:ignorable".len() + 64 },
-                      );
-
-                      #xml_tag_attributes_xmlns_inner
-
-                      #( #xml_tag_attributes_inner )*
-
-                      return Some(#attributes_ident);
-                  }
-                }
-            } else {
-                parse_quote! {
-                  fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
-                      return None;
-                  }
-                }
-            };
-
-        let xml_inner: ImplItemFn = if xml_inner_writer.is_some() {
-            parse_quote!(
-                #[allow(unused_variables)]
-                fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
-                    let mut #xml_inner_ident = String::with_capacity(512);
-
-                    #xml_inner_writer
-
-                    return Some(#xml_inner_ident);
-                }
-            )
+            }
         } else {
             parse_quote! {
-                fn xml_inner(&self, _with_xmlns: bool) -> Option<String> {
-                    return None;
-                }
+              fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+                  return None;
+              }
             }
         };
 
-        token_stream_list.push(parse_quote!(
-          impl Serializeable for #struct_type {
-              const PREFIXED_NAME: &str = #type_prefixed_name;
+    let xml_inner: ImplItemFn = if xml_inner_writer.is_some() {
+        parse_quote!(
+            #[allow(unused_variables)]
+            fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
+                let mut #xml_inner_ident = String::with_capacity(512);
 
-              const NAME: &str = #type_name;
+                #xml_inner_writer
 
-              #xml_tag_attributes
-
-              #xml_inner
-          }
-        ));
-    }
-
-    for schema_enum in &schema.enums {
-        let enum_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            &schema.module_name,
-            schema_enum.name.to_upper_camel_case()
-        ))
-        .unwrap();
-
-        let variants = schema_enum.facets.iter().map(|schema_enum_facet| {
-            let variant_ident = schema_enum_facet.as_variant_ident();
-            let variant_value = &schema_enum_facet.value;
-
-            return quote! {
-              Self::#variant_ident => #variant_value,
-            };
-        });
-
-        token_stream_list.push(parse_quote! {
-          impl std::fmt::Display for #enum_type {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-              let value = match self {
-                #( #variants )*
-              };
-
-              return write!(f, "{value}");
+                return Some(#xml_inner_ident);
             }
-          }
-        });
-    }
+        )
+    } else {
+        parse_quote! {
+            fn xml_inner(&self, _with_xmlns: bool) -> Option<String> {
+                return None;
+            }
+        }
+    };
 
-    Ok(quote! {
-      #( #token_stream_list )*
-    })
+    return Ok(quote!(
+      impl Serializeable for #struct_type {
+          const PREFIXED_NAME: &str = #type_prefixed_name;
+
+          const NAME: &str = #type_name;
+
+          #xml_tag_attributes
+
+          #xml_inner
+      }
+    )
+    .to_string());
+}
+
+fn gen_schema_enum(
+    schema: &OpenXmlSchema,
+    schema_enum: &OpenXmlSchemaEnum,
+) -> Result<String, BuildErrorReport> {
+    let enum_type: Type = parse_str(&format!(
+        "crate::schemas::{}::{}",
+        &schema.module_name,
+        schema_enum.name.to_upper_camel_case()
+    ))
+    .map_err(BuildError::from)?;
+
+    let variants = schema_enum.facets.iter().map(|schema_enum_facet| {
+        let variant_ident = schema_enum_facet.as_variant_ident();
+        let variant_value = &schema_enum_facet.value;
+
+        return quote! {
+          Self::#variant_ident => #variant_value,
+        };
+    });
+
+    return Ok(quote! {
+      impl std::fmt::Display for #enum_type {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+          let value = match self {
+            #( #variants )*
+          };
+
+          return write!(f, "{value}");
+        }
+      }
+    }
+    .to_string());
 }
 
 fn gen_attr(schema: &OpenXmlSchemaTypeAttribute, attributes_ident: &Ident) -> TokenStream {
