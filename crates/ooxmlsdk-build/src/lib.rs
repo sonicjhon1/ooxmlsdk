@@ -110,7 +110,7 @@ pub fn generate_with(
         write_deserializers,
         write_serializers,
         #[cfg(feature = "parts")]
-        write_parts, 
+        write_parts,
         #[cfg(feature = "validators")]
         write_validators,
     ]
@@ -131,11 +131,41 @@ pub(crate) fn write_schemas(
     fs::create_dir_all(&out_schemas_dir_path).map_err(BuildError::from)?;
     fs::create_dir_all(&out_common_dir_path).map_err(BuildError::from)?;
 
+    fs::write(
+        out_common_dir_path.join("mod.rs"),
+        include_bytes!("includes/common.rs"),
+    )
+    .map_err(BuildError::from)?;
+
+    fs::write(
+        out_schemas_dir_path.join("simple_type.rs"),
+        include_bytes!("includes/simple_type.rs"),
+    )
+    .map_err(BuildError::from)?;
+
+    fs::write(
+        out_schemas_dir_path.join("opc_content_types.rs"),
+        include_bytes!("includes/packages/opc_content_types.rs"),
+    )
+    .map_err(BuildError::from)?;
+
+    fs::write(
+        out_schemas_dir_path.join("opc_relationships.rs"),
+        include_bytes!("includes/packages/opc_relationships.rs"),
+    )
+    .map_err(BuildError::from)?;
+
+    fs::write(
+        out_schemas_dir_path.join("opc_core_properties.rs"),
+        include_bytes!("includes/packages/opc_core_properties.rs"),
+    )
+    .map_err(BuildError::from)?;
+
     let schemas_mod_use_list = gen_context
         .schemas
         .iter()
         .map(|schema| {
-            return generate_pub_item_mods(
+            return generate_pub_item_mod(
                 gen_open_xml_schemas(schema, gen_context)?,
                 &out_schemas_dir_path,
                 &schema.module_name,
@@ -143,55 +173,7 @@ pub(crate) fn write_schemas(
         })
         .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    let token_stream: TokenStream =
-        parse_str(include_str!("includes/simple_type.rs")).map_err(BuildError::from)?;
-
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let schemas_mod_path = out_schemas_dir_path.join("simple_type.rs");
-    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
-
-    let token_stream: TokenStream =
-        parse_str(include_str!("includes/common.rs")).map_err(BuildError::from)?;
-
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let schemas_mod_path = out_common_dir_path.join("mod.rs");
-    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
-
-    let token_stream: TokenStream =
-        parse_str(include_str!("includes/packages/opc_content_types.rs"))
-            .map_err(BuildError::from)?;
-
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let schemas_mod_path = out_schemas_dir_path.join("opc_content_types.rs");
-    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
-
-    let token_stream: TokenStream =
-        parse_str(include_str!("includes/packages/opc_relationships.rs"))
-            .map_err(BuildError::from)?;
-
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let schemas_mod_path = out_schemas_dir_path.join("opc_relationships.rs");
-    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
-
-    let token_stream: TokenStream =
-        parse_str(include_str!("includes/packages/opc_core_properties.rs"))
-            .map_err(BuildError::from)?;
-
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let schemas_mod_path = out_schemas_dir_path.join("opc_core_properties.rs");
-    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
-
-    let token_stream: TokenStream = quote! {
+    let token_stream = quote! {
         pub mod simple_type;
         pub mod opc_content_types;
         pub mod opc_core_properties;
@@ -199,11 +181,11 @@ pub(crate) fn write_schemas(
         #( #schemas_mod_use_list )*
     };
 
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let schemas_mod_path = out_schemas_dir_path.join("mod.rs");
-    fs::write(schemas_mod_path, formatted).map_err(BuildError::from)?;
+    fs::write(
+        out_schemas_dir_path.join("mod.rs"),
+        token_stream.to_string(),
+    )
+    .map_err(BuildError::from)?;
 
     Ok(())
 }
@@ -213,14 +195,13 @@ pub(crate) fn write_deserializers(
     out_dir_path: &Path,
 ) -> Result<(), BuildErrorReport> {
     let out_deserializers_dir_path = &out_dir_path.join("deserializers");
-
     fs::create_dir_all(out_deserializers_dir_path).map_err(BuildError::from)?;
 
     let deserializers_mod_use_list = gen_context
         .schemas
         .iter()
         .map(|schema| {
-            return generate_pub_item_mods(
+            return generate_pub_item_mod(
                 gen_deserializers(schema, gen_context)?,
                 out_deserializers_dir_path,
                 &schema.module_name,
@@ -228,15 +209,15 @@ pub(crate) fn write_deserializers(
         })
         .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    let token_stream: TokenStream = quote! {
+    let token_stream = quote! {
         #( #deserializers_mod_use_list )*
     };
 
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let deserializers_mod_path = out_deserializers_dir_path.join("mod.rs");
-    fs::write(deserializers_mod_path, formatted).map_err(BuildError::from)?;
+    fs::write(
+        out_deserializers_dir_path.join("mod.rs"),
+        token_stream.to_string(),
+    )
+    .map_err(BuildError::from)?;
 
     Ok(())
 }
@@ -246,14 +227,13 @@ pub(crate) fn write_serializers(
     out_dir_path: &Path,
 ) -> Result<(), BuildErrorReport> {
     let out_serializers_dir_path = &out_dir_path.join("serializers");
-
     fs::create_dir_all(out_serializers_dir_path).map_err(BuildError::from)?;
 
     let serializers_mod_use_list = gen_context
         .schemas
         .iter()
         .map(|schema| {
-            return generate_pub_item_mods(
+            return generate_pub_item_mod(
                 gen_serializer(schema, gen_context)?,
                 out_serializers_dir_path,
                 &schema.module_name,
@@ -261,15 +241,15 @@ pub(crate) fn write_serializers(
         })
         .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    let mod_rs = quote! {
+    let token_stream = quote! {
         #( #serializers_mod_use_list )*
     };
 
-    let syntax_tree = syn::parse2(mod_rs).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let serializers_mod_path = out_serializers_dir_path.join("mod.rs");
-    fs::write(serializers_mod_path, formatted).map_err(BuildError::from)?;
+    fs::write(
+        out_serializers_dir_path.join("mod.rs"),
+        token_stream.to_string(),
+    )
+    .map_err(BuildError::from)?;
 
     Ok(())
 }
@@ -282,14 +262,13 @@ pub(crate) fn write_parts(
     use crate::generator::open_xml_part::gen_open_xml_parts;
 
     let out_parts_dir_path = &out_dir_path.join("parts");
-
     fs::create_dir_all(out_parts_dir_path).map_err(BuildError::from)?;
 
     let parts_mod_use_list = gen_context
         .parts
         .iter()
         .map(|part| {
-            return generate_pub_item_mods(
+            return generate_pub_item_mod(
                 gen_open_xml_parts(part, gen_context)?,
                 out_parts_dir_path,
                 &part.module_name,
@@ -297,15 +276,12 @@ pub(crate) fn write_parts(
         })
         .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    let token_stream: TokenStream = quote! {
+    let token_stream = quote! {
         #( #parts_mod_use_list )*
     };
 
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let parts_mod_path = out_parts_dir_path.join("mod.rs");
-    fs::write(parts_mod_path, formatted).map_err(BuildError::from)?;
+    fs::write(out_parts_dir_path.join("mod.rs"), token_stream.to_string())
+        .map_err(BuildError::from)?;
 
     Ok(())
 }
@@ -318,14 +294,13 @@ pub(crate) fn write_validators(
     use crate::generator::validator::gen_validators;
 
     let out_validators_dir_path = &out_dir_path.join("validators");
-
     fs::create_dir_all(out_validators_dir_path).map_err(BuildError::from)?;
 
     let validators_mod_use_list = gen_context
         .schemas
         .iter()
         .map(|part| {
-            return generate_pub_item_mods(
+            return generate_pub_item_mod(
                 gen_validators(part, gen_context)?,
                 out_validators_dir_path,
                 &part.module_name,
@@ -333,35 +308,34 @@ pub(crate) fn write_validators(
         })
         .collect::<Result<Vec<ItemMod>, BuildErrorReport>>()?;
 
-    let token_stream: TokenStream = quote! {
+    let token_stream = quote! {
         #( #validators_mod_use_list )*
     };
 
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let validators_mod_path = out_validators_dir_path.join("mod.rs");
-    fs::write(validators_mod_path, formatted).map_err(BuildError::from)?;
+    fs::write(
+        out_validators_dir_path.join("mod.rs"),
+        token_stream.to_string(),
+    )
+    .map_err(BuildError::from)?;
 
     Ok(())
 }
 
-pub(crate) fn generate_pub_item_mods(
+pub(crate) fn generate_pub_item_mod(
     token_stream: TokenStream,
     directory: &Path,
     module_name: &str,
 ) -> Result<ItemMod, BuildErrorReport> {
-    let syntax_tree = syn::parse2(token_stream).map_err(BuildError::from)?;
-    let formatted = prettyplease::unparse(&syntax_tree);
-
-    let module_path = directory.join(format!("{module_name}.rs"));
-    fs::write(module_path, formatted).map_err(BuildError::from)?;
+    fs::write(
+        directory.join(format!("{module_name}.rs")),
+        token_stream.to_string(),
+    )
+    .map_err(BuildError::from)?;
 
     let mod_ident: Ident = parse_str(module_name).map_err(BuildError::from)?;
-    let mod_item = syn::parse2(quote! {
+    let mod_item = syn::parse_quote! {
         pub mod #mod_ident;
-    })
-    .map_err(BuildError::from)?;
+    };
 
     return Ok(mod_item);
 }

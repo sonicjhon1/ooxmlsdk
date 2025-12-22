@@ -20,7 +20,6 @@ criterion = "0.8"
 heck = "0.5"
 ooxmlsdk = { version = "0.3", path = "crates/ooxmlsdk", default-features = false }
 ooxmlsdk-build = { version = "0.3", path = "crates/ooxmlsdk-build" }
-prettyplease = "0.2"
 proc-macro2 = "1.0.103"
 quick-xml = "0.38"
 quote = "1.0.42"
