@@ -426,6 +426,7 @@ dependencies = [
  "proc-macro2",
  "quick-xml",
  "quote",
+ "rayon",
  "rootcause",
  "serde",
  "serde_derive",

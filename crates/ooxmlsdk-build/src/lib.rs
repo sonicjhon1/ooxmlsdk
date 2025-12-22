@@ -2,6 +2,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fs, path::Path};
 use syn::{Ident, ItemMod, parse_str};
 
@@ -104,17 +105,18 @@ pub fn generate_with(
         .part_name_type_name_map
         .insert("StylesWithEffectsPart", "w:CT_Styles/w:styles");
 
-    write_schemas(&gen_context, out_dir)?;
-
-    write_deserializers(&gen_context, out_dir)?;
-
-    write_serializers(&gen_context, out_dir)?;
-
-    #[cfg(feature = "parts")]
-    write_parts(&gen_context, out_dir)?;
-
-    #[cfg(feature = "validators")]
-    write_validators(&gen_context, out_dir)?;
+    [
+        write_schemas,
+        write_deserializers,
+        write_serializers,
+        #[cfg(feature = "parts")]
+        write_parts, 
+        #[cfg(feature = "validators")]
+        write_validators,
+    ]
+    .par_iter()
+    .map(|task| task(&gen_context, out_dir))
+    .collect::<Result<Vec<()>, _>>()?;
 
     Ok(())
 }
