@@ -261,7 +261,7 @@ fn gen_attr(
             )
         }
     } else {
-        format!("crate::schemas::simple_type::{}", &schema.r#type)
+        format!("crate::common::simple_type::{}", &schema.r#type)
     };
     let type_ident: Type = parse_str(&type_ident_raw).unwrap();
 
@@ -366,7 +366,7 @@ fn gen_xml_content_type(
 
     let Some(schema_enum) = gen_context.enum_type_enum_map.get(first_name) else {
         return Ok(parse_str(&format!(
-            "crate::schemas::simple_type::{}",
+            "crate::common::simple_type::{}",
             simple_type_mapping(first_name)
         ))
         .map_err(BuildError::from)?);

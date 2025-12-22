@@ -47,7 +47,7 @@ pub fn gen_open_xml_parts(
     if part.base == "OpenXmlPackage" {
         field_declaration_list.push(
             parse2(quote! {
-              let content_types = crate::schemas::opc_content_types::Types::from_reader(
+              let content_types = crate::common::opc_content_types::Types::from_reader(
                 std::io::BufReader::new(archive.by_name("[Content_Types].xml").map_err(SdkError::from)?,
               ))?;
             })
@@ -112,7 +112,7 @@ pub fn gen_open_xml_parts(
                 let relationships = if let Some(file_path) = file_path_set.get(&#part_rels_path_ident) {
                     rels_path = file_path.to_string();
 
-                    Some(crate::schemas::opc_relationships::Relationships::from_reader(
+                    Some(crate::common::opc_relationships::Relationships::from_reader(
                         std::io::BufReader::new(archive.by_name(file_path).map_err(SdkError::from)?)
                     )?)
                 } else {
@@ -216,7 +216,7 @@ pub fn gen_open_xml_parts(
             field_declaration_list.push(
                 parse2(quote! {
                     let root_element = Some(
-                        crate::schemas::opc_core_properties::CoreProperties::from_reader(
+                        crate::common::opc_core_properties::CoreProperties::from_reader(
                             std::io::BufReader::new(archive.by_name(path).map_err(SdkError::from)?)
                         )?,
                     );
@@ -511,7 +511,7 @@ fn gen_struct_fn(
 
     if part.base == "OpenXmlPackage" {
         fields.push(quote! {
-            pub content_types: crate::schemas::opc_content_types::Types,
+            pub content_types: crate::common::opc_content_types::Types,
         });
     } else {
         fields.push(quote! {
@@ -521,7 +521,7 @@ fn gen_struct_fn(
 
     if !part.children.is_empty() {
         fields.push(quote! {
-            pub relationships: Option<crate::schemas::opc_relationships::Relationships>,
+            pub relationships: Option<crate::common::opc_relationships::Relationships>,
         });
 
         fields.push(quote! {
@@ -541,7 +541,7 @@ fn gen_struct_fn(
             pub part_content: Vec<u8>,
         },
         ("CoreFilePropertiesPart", _) => quote! {
-            pub root_element: crate::schemas::opc_core_properties::CoreProperties,
+            pub root_element: crate::common::opc_core_properties::CoreProperties,
         },
         _ => {
             if let Some(root_element_type_name) =

@@ -738,7 +738,7 @@ fn gen_simple_child_match_arm(
 
     let simple_type_str = simple_type_mapping(first_name);
 
-    let enum_type: Type = parse_str(&format!("crate::schemas::simple_type::{simple_type_str}"))
+    let enum_type: Type = parse_str(&format!("crate::common::simple_type::{simple_type_str}"))
         .map_err(BuildError::from)?;
 
     return Ok(parse2(match simple_type_str {
@@ -835,7 +835,7 @@ fn gen_field_match_arm(
           "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
           | "UInt64Value" | "DoubleValue" | "SingleValue" => {
             let enum_type: Type =
-              parse_str(&format!("crate::schemas::simple_type::{}", &schema.r#type)).map_err(BuildError::from)?;
+              parse_str(&format!("crate::common::simple_type::{}", &schema.r#type)).map_err(BuildError::from)?;
 
             quote! {
               #attr_name_literal => {
