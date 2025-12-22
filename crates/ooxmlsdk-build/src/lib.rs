@@ -132,12 +132,6 @@ pub(crate) fn write_common(
     fs::create_dir_all(&out_dir).map_err(BuildError::from)?;
 
     fs::write(
-        out_dir.join("common.rs"),
-        include_bytes!("includes/common.rs"),
-    )
-    .map_err(BuildError::from)?;
-
-    fs::write(
         out_dir.join("simple_type.rs"),
         include_bytes!("includes/simple_type.rs"),
     )
@@ -161,15 +155,14 @@ pub(crate) fn write_common(
     )
     .map_err(BuildError::from)?;
 
-    let mod_rs_content = quote! {
-        mod common;
-        pub use common::*;
+    let mut mod_rs_content = quote! {
         pub mod simple_type;
         pub mod opc_content_types;
         pub mod opc_core_properties;
         pub mod opc_relationships;
     }
     .to_string();
+    mod_rs_content.push_str(include_str!("includes/common.rs"));
 
     fs::write(out_dir.join("mod.rs"), mod_rs_content).map_err(BuildError::from)?;
 
