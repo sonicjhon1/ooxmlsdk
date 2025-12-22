@@ -58,10 +58,6 @@ impl<'a> GenContext<'a> {
                 .to_string_lossy()
                 .to_snake_case();
 
-            parts.retain_mut(|part| {
-                return check_office_version(&part.version);
-            });
-
             parts.push(open_xml_part);
         }
 
@@ -79,32 +75,12 @@ impl<'a> GenContext<'a> {
                 .to_string_lossy()
                 .to_snake_case();
 
-            open_xml_schema.enums.retain_mut(|schema_enum| {
-                if !check_office_version(&schema_enum.version) {
-                    return false;
-                };
-
-                schema_enum
-                    .facets
-                    .retain(|x| check_office_version(&x.version));
-
-                return true;
+            open_xml_schema.types.iter_mut().for_each(|schema_type| {
+                schema_type.module_name = open_xml_schema.module_name.clone()
             });
 
-            open_xml_schema.types.retain_mut(|schema_type| {
-                if !check_office_version(&schema_type.version) {
-                    return false;
-                };
-
-                schema_type
-                    .attributes
-                    .retain(|x| check_office_version(&x.version));
-
-                schema_type.particle.check_particle_version();
-
-                schema_type.module_name = open_xml_schema.module_name.clone();
-
-                return true;
+            open_xml_schema.enums.iter_mut().for_each(|schema_type| {
+                schema_type.module_name = open_xml_schema.module_name.clone()
             });
 
             schemas.push(open_xml_schema);
@@ -192,29 +168,32 @@ impl<'a> GenContext<'a> {
         .unwrap();
 
         parts.retain_mut(|part| {
-            if !part_name_set.contains(&part.name) {
+            if !(part_name_set.contains(&part.name) && check_office_version(&part.version)) {
                 return false;
             }
 
             if let Some(part_type_name) = part_type_name_map.get(part.name.as_str()) {
                 let type_version = type_name_version_map.try_get(*part_type_name).unwrap();
-
-                return check_office_version(type_version);
-            }
+                if !check_office_version(type_version) {
+                    return false;
+                }
+            };
 
             part.children.retain(|x| {
                 if x.is_data_part_reference {
                     return true;
                 }
 
-                if !check_office_version(part_name_version_map.try_get(&x.name).unwrap()) {
+                let child_version = part_name_version_map.try_get(&x.name).unwrap();
+                if !check_office_version(child_version) {
                     return false;
-                };
+                }
 
                 if let Some(part_type_name) = part_type_name_map.get(x.name.as_str()) {
                     let type_version = type_name_version_map.try_get(*part_type_name).unwrap();
-
-                    return check_office_version(type_version);
+                    if !check_office_version(type_version) {
+                        return false;
+                    }
                 };
 
                 return true;
@@ -223,14 +202,7 @@ impl<'a> GenContext<'a> {
             return true;
         });
 
-        for schema in schemas.iter_mut() {
-            for schema_enum in schema.enums.iter_mut() {
-                schema_enum.module_name = schema.module_name.clone();
-            }
-        }
-
         let mut type_name_set: HashSet<String> = HashSet::new();
-
         let mut type_name_type_map: HashMap<String, &OpenXmlSchemaType> = HashMap::new();
 
         for schema in schemas.iter() {
@@ -247,23 +219,50 @@ impl<'a> GenContext<'a> {
             }
         }
 
-        for schema in schemas.iter_mut() {
-            for schema_type in schema.types.iter_mut() {
-                schema_type.children.retain(|x| {
-                    let child_type_version =
-                        type_name_version_map.try_get_mut(x.name.as_str()).unwrap();
-
-                    check_office_version(child_type_version)
-                });
-            }
-        }
-
-        schemas.retain(|x| {
+        schemas.retain_mut(|schema| {
             let schema_namespace_version = uri_namespace_version_map
-                .try_get(x.target_namespace.as_str())
+                .try_get(schema.target_namespace.as_str())
                 .unwrap();
 
-            check_office_version(schema_namespace_version)
+            if !check_office_version(schema_namespace_version) {
+                return false;
+            };
+
+            schema.enums.retain_mut(|schema_enum| {
+                if !check_office_version(&schema_enum.version) {
+                    return false;
+                }
+
+                schema_enum
+                    .facets
+                    .retain(|x| check_office_version(&x.version));
+
+                return true;
+            });
+
+            schema.types.retain_mut(|schema_type| {
+                if !check_office_version(&schema_type.version) {
+                    return false;
+                }
+
+                schema_type
+                    .attributes
+                    .retain(|x| check_office_version(&x.version));
+
+                schema_type.children.retain(|schema_type_child| {
+                    let child_type_version = type_name_version_map
+                        .try_get(schema_type_child.name.as_str())
+                        .unwrap();
+
+                    return check_office_version(child_type_version);
+                });
+
+                schema_type.particle.check_particle_version();
+
+                return true;
+            });
+
+            return true;
         });
 
         Self {
@@ -287,11 +286,6 @@ pub(crate) fn gen_type_name_set(
 
         if schema_type.is_derived {
             let (type_base_class, _) = schema_type.split_name();
-            // TODO: Remove this
-            debug_assert_eq!(
-                format!("{type_base_class}/"),
-                type_name[00..type_name.find('/').unwrap() + 1].to_string()
-            );
             type_name_set.insert(format!("{type_base_class}/"));
         }
 
