@@ -1,10 +1,9 @@
 #![feature(trim_prefix_suffix)]
 
 use quote::{ToTokens, quote};
-use rayon::{
-    iter::{IntoParallelRefIterator, ParallelIterator},
-    slice::ParallelSliceMut,
-};
+use rayon::
+    iter::{IntoParallelRefIterator, ParallelIterator}
+;
 use std::{fs, path::Path};
 use syn::{Ident, ItemMod, parse_quote, parse_str};
 
@@ -176,7 +175,7 @@ pub(crate) fn write_schemas(
     let out_dir = out_base_dir.join("schemas");
     fs::create_dir_all(&out_dir).map_err(BuildError::from)?;
 
-    let mut mod_rs_lines = gen_context
+    let mod_rs_lines = gen_context
         .schemas
         .par_iter()
         .map(|schema| {
@@ -187,7 +186,6 @@ pub(crate) fn write_schemas(
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
-    mod_rs_lines.par_sort_unstable();
 
     fs::write(out_dir.join("mod.rs"), mod_rs_lines.join("\n")).map_err(BuildError::from)?;
 
@@ -201,7 +199,7 @@ pub(crate) fn write_deserializers(
     let out_dir = &out_base_dir.join("deserializers");
     fs::create_dir_all(out_dir).map_err(BuildError::from)?;
 
-    let mut mod_rs_lines = gen_context
+    let mod_rs_lines = gen_context
         .schemas
         .iter()
         .map(|schema| {
@@ -212,7 +210,6 @@ pub(crate) fn write_deserializers(
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
-    mod_rs_lines.par_sort_unstable();
 
     fs::write(out_dir.join("mod.rs"), mod_rs_lines.join("\n")).map_err(BuildError::from)?;
 
@@ -226,7 +223,7 @@ pub(crate) fn write_serializers(
     let out_dir = &out_base_dir.join("serializers");
     fs::create_dir_all(out_dir).map_err(BuildError::from)?;
 
-    let mut mod_rs_lines = gen_context
+    let mod_rs_lines = gen_context
         .schemas
         .iter()
         .map(|schema| {
@@ -237,7 +234,6 @@ pub(crate) fn write_serializers(
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
-    mod_rs_lines.par_sort_unstable();
 
     fs::write(out_dir.join("mod.rs"), mod_rs_lines.join("\n")).map_err(BuildError::from)?;
 
@@ -254,7 +250,7 @@ pub(crate) fn write_parts(
     let out_dir = &out_base_dir.join("parts");
     fs::create_dir_all(out_dir).map_err(BuildError::from)?;
 
-    let mut mod_rs_lines = gen_context
+    let mod_rs_lines = gen_context
         .parts
         .par_iter()
         .map(|part| {
@@ -265,7 +261,6 @@ pub(crate) fn write_parts(
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
-    mod_rs_lines.par_sort_unstable();
 
     fs::write(out_dir.join("mod.rs"), mod_rs_lines.join("\n")).map_err(BuildError::from)?;
 
@@ -282,7 +277,7 @@ pub(crate) fn write_validators(
     let out_dir = &out_base_dir.join("validators");
     fs::create_dir_all(out_dir).map_err(BuildError::from)?;
 
-    let mut mod_rs_lines = gen_context
+    let mod_rs_lines = gen_context
         .schemas
         .par_iter()
         .map(|part| {
@@ -293,7 +288,6 @@ pub(crate) fn write_validators(
             );
         })
         .collect::<Result<Vec<_>, _>>()?;
-    mod_rs_lines.par_sort_unstable();
 
     fs::write(out_dir.join("mod.rs"), mod_rs_lines.join("\n")).map_err(BuildError::from)?;
 
