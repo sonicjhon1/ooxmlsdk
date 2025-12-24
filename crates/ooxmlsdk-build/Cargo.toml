@@ -36,9 +36,8 @@ quote = { workspace = true }
 rayon = { version = "1.11.0" }
 rootcause = { workspace = true }
 serde = { workspace = true }
-serde_derive = { workspace = true }
 serde_json = { workspace = true }
-syn = { workspace = true, features = ["full"]}
+syn = { workspace = true, features = ["full"] }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zip = { workspace = true, optional = true }
