@@ -1,9 +1,7 @@
 #![feature(trim_prefix_suffix)]
 
 use quote::{ToTokens, quote};
-use rayon::
-    iter::{IntoParallelRefIterator, ParallelIterator}
-;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fs, path::Path};
 use syn::{Ident, ItemMod, parse_quote, parse_str};
 
