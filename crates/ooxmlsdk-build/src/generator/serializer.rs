@@ -100,7 +100,7 @@ fn gen_schema_type(
             if let Some(xmlns) = &self.xmlns {
                 #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
             } else {
-                tracing::warn!("with_xmlns is true, but self.xmlns is None.");
+                tracing::warn!("with_xmlns is true, but {}::xmlns is None.", Self::NAME);
             }
           }
 
