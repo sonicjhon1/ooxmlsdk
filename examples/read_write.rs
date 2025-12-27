@@ -10,10 +10,10 @@ use rootcause::prelude::*;
 use std::{fs::File, io::BufReader};
 use tempfile::tempfile;
 
-const SAMPLE_DOCX_FILE_PATH: &str = "examples/read_docx/samples/demo.docx";
-const SAMPLE_PPTX_FILE_PATH: &str = "examples/read_pptx/samples/demo.pptx";
-const SAMPLE_XLSX_FILE_PATH: &str = "examples/read_xlsx/samples/demo.xlsx";
-const SAMPLE_XML_FILE_PATH: &str = "examples/read_write_xml/samples/sheet1.xml";
+const SAMPLE_DOCX_FILE_PATH: &str = "examples/samples/demo.docx";
+const SAMPLE_PPTX_FILE_PATH: &str = "examples/samples/demo.pptx";
+const SAMPLE_XLSX_FILE_PATH: &str = "examples/samples/demo.xlsx";
+const SAMPLE_XML_FILE_PATH: &str = "examples/samples/sheet1.xml";
 
 fn main() -> Result<(), Report> {
     {

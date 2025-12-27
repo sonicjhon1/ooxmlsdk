@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ooxmlsdk", "crates/ooxmlsdk-build", "examples/*"]
+members = ["crates/*"]
 
 [workspace.package]
 version = "0.3.0"
@@ -18,8 +18,7 @@ readme = "README.md"
 [workspace.dependencies]
 criterion = "0.8"
 heck = "0.5"
-ooxmlsdk = { version = "0.3", path = "crates/ooxmlsdk", default-features = false }
-ooxmlsdk-build = { version = "0.3", path = "crates/ooxmlsdk-build" }
+ooxmlsdk-build = { path = "crates/ooxmlsdk-build" }
 proc-macro2 = "1.0.103"
 quick-xml = "0.38"
 quote = "1.0.42"
@@ -32,5 +31,63 @@ thiserror = "2.0"
 tracing = "0.1"
 zip = { version = "7.0", default-features = false, features = ["deflate"] }
 
+[features]
+default = ["docx", "xlsx", "pptx", "office2007", "parts"]
+# Generators
+schemas = ["ooxmlsdk-build/schemas"]
+parts = ["schemas", "dep:zip", "ooxmlsdk-build/parts"]
+validators = ["schemas", "ooxmlsdk-build/validators"]
+# Documents
+docx = ["ooxmlsdk-build/docx"]
+xlsx = ["ooxmlsdk-build/xlsx"]
+pptx = ["ooxmlsdk-build/pptx"]
+# Versions
+office2007 = ["ooxmlsdk-build/office2007"]
+office2010 = ["ooxmlsdk-build/office2010"]
+office2013 = ["ooxmlsdk-build/office2013"]
+office2016 = ["ooxmlsdk-build/office2016"]
+office2019 = ["ooxmlsdk-build/office2019"]
+office2021 = ["ooxmlsdk-build/office2021"]
+microsoft365 = ["ooxmlsdk-build/microsoft365"]
+
 [workspace.lints.clippy]
 needless_return = "allow"
+
+[package]
+name = "ooxmlsdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+description.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+quick-xml = { workspace = true }
+rootcause = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zip = { workspace = true, optional = true }
+
+[build-dependencies]
+ooxmlsdk-build = { workspace = true }
+
+[lints]
+workspace = true
+
+[[example]]
+name = "read_write"
+required-features = [
+    "docx",
+    "pptx",
+    "xlsx",
+    "office2010",
+    "parts",
+    "validators",
+]
