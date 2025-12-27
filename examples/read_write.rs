@@ -20,7 +20,7 @@ fn main() -> Result<(), Report> {
         let docx_xml = docx
             .main_document_part
             .root_element
-            .to_xml_string(true, false);
+            .to_xml_string(true, true);
         println!("{docx_xml}");
         assert!(docx.main_document_part.root_element.validate()?);
 
@@ -30,7 +30,7 @@ fn main() -> Result<(), Report> {
             reader_docx
                 .main_document_part
                 .root_element
-                .to_xml_string(true, false),
+                .to_xml_string(true, true),
             docx_xml
         );
 
@@ -43,7 +43,7 @@ fn main() -> Result<(), Report> {
         let pptx_xml = pptx
             .presentation_part
             .root_element
-            .to_xml_string(true, false);
+            .to_xml_string(true, true);
         println!("{pptx_xml}");
         assert!(pptx.presentation_part.root_element.validate()?);
 
@@ -53,7 +53,7 @@ fn main() -> Result<(), Report> {
             reader_pptx
                 .presentation_part
                 .root_element
-                .to_xml_string(true, false),
+                .to_xml_string(true, true),
             pptx_xml
         );
 
@@ -63,7 +63,7 @@ fn main() -> Result<(), Report> {
 
     {
         let xlsx = SpreadsheetDocument::new_from_file(SAMPLE_XLSX_FILE_PATH).unwrap();
-        let xlsx_xml = xlsx.workbook_part.root_element.to_xml_string(true, false);
+        let xlsx_xml = xlsx.workbook_part.root_element.to_xml_string(true, true);
         println!("{xlsx_xml}");
         assert!(xlsx.workbook_part.root_element.validate()?);
 
@@ -73,7 +73,7 @@ fn main() -> Result<(), Report> {
             reader_xlsx
                 .workbook_part
                 .root_element
-                .to_xml_string(true, false),
+                .to_xml_string(true, true),
             xlsx_xml
         );
 
@@ -83,7 +83,7 @@ fn main() -> Result<(), Report> {
 
     {
         let worksheet = Worksheet::from_file(SAMPLE_XML_FILE_PATH).unwrap();
-        let xml = worksheet.to_xml_string(true, false);
+        let xml = worksheet.to_xml_string(true, true);
         println!("{xml}");
     }
 
