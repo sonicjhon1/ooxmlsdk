@@ -96,7 +96,7 @@ fn gen_schema_type(
                     == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
     {
         Some(quote! {
-          if needs_xmlns && let Some(xmlns) = &self.xmlns {
+          if with_xmlns && let Some(xmlns) = &self.xmlns {
             #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
           }
 
@@ -116,7 +116,7 @@ fn gen_schema_type(
         if xml_tag_attributes_xmlns_inner.is_some() || !xml_tag_attributes_inner.is_empty() {
             parse_quote! {
               #[allow(unused_variables)]
-              fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+              fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
                   let mut #attributes_ident = String::with_capacity(
                     const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 64 },
                   );
@@ -130,7 +130,7 @@ fn gen_schema_type(
             }
         } else {
             parse_quote! {
-              fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+              fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
                   return None;
               }
             }

@@ -150,12 +150,12 @@ pub trait Serializeable {
     }
 
     #[inline]
-    fn xml_tag_end(&self, needs_xmlns: bool) -> String {
+    fn xml_tag_end(&self, with_xmlns: bool) -> String {
         let mut xml = String::with_capacity(const { Self::PREFIXED_NAME.len() + 3 });
 
         xml.push_str("</");
 
-        if needs_xmlns {
+        if with_xmlns {
             xml.push_str(Self::PREFIXED_NAME);
         } else {
             xml.push_str(Self::NAME);
@@ -167,26 +167,26 @@ pub trait Serializeable {
     }
 
     #[inline]
-    fn to_xml_string(&self, header: bool, needs_xmlns: bool) -> String {
+    fn to_xml_string(&self, header: bool, with_xmlns: bool) -> String {
         let mut xml = String::with_capacity(64);
 
         if header {
             xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n");
         }
 
-        xml.push_str(&self.xml_tag_start(needs_xmlns));
+        xml.push_str(&self.xml_tag_start(with_xmlns));
 
-        if let Some(xml_inner) = self.xml_inner(needs_xmlns) {
+        if let Some(xml_inner) = self.xml_inner(with_xmlns) {
             xml.push_str(&xml_inner);
         }
 
-        xml.push_str(&self.xml_tag_end(needs_xmlns));
+        xml.push_str(&self.xml_tag_end(with_xmlns));
 
         return xml;
     }
 
     #[inline]
-    fn to_xml_bytes(&self, header: bool, needs_xmlns: bool) -> Vec<u8> {
+    fn to_xml_bytes(&self, header: bool, with_xmlns: bool) -> Vec<u8> {
         let mut xml = Vec::with_capacity(128);
 
         if header {
@@ -195,13 +195,13 @@ pub trait Serializeable {
             );
         }
 
-        xml.extend_from_slice(self.xml_tag_start(needs_xmlns).as_bytes());
+        xml.extend_from_slice(self.xml_tag_start(with_xmlns).as_bytes());
 
-        if let Some(xml_inner) = self.xml_inner(needs_xmlns) {
+        if let Some(xml_inner) = self.xml_inner(with_xmlns) {
             xml.extend_from_slice(xml_inner.as_bytes());
         }
 
-        xml.extend_from_slice(self.xml_tag_end(needs_xmlns).as_bytes());
+        xml.extend_from_slice(self.xml_tag_end(with_xmlns).as_bytes());
 
         return xml;
     }
