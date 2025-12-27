@@ -347,7 +347,7 @@ fn gen_schema_type(
                         mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
                     }
                     key => {
-                        if let Some(xmlns_key) = key.strip_prefix(b"xmlsns:") {
+                        if let Some(xmlns_key) = key.strip_prefix(b"xmlns:") {
                             xmlns_map.insert(
                                 String::from_utf8_lossy(xmlns_key).to_string(),
                                 attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned(),
