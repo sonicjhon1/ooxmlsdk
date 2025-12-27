@@ -117,12 +117,12 @@ impl Serializeable for Types {
 
     const NAME: &str = "w:Types";
 
-    fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+    fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
             const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
         );
 
-        if needs_xmlns && let Some(xmlns) = &self.xmlns {
+        if with_xmlns && let Some(xmlns) = &self.xmlns {
             attributes.push_str(&as_xml_attribute("xmlns", xmlns));
         }
 
@@ -211,7 +211,7 @@ impl Serializeable for Default {
 
     const NAME: &str = "Default";
 
-    fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+    fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
         let mut attributes =
             String::with_capacity(const { "Extension".len() + "ContentType".len() + 32 });
 
@@ -279,7 +279,7 @@ impl Serializeable for Override {
 
     const NAME: &str = "Override";
 
-    fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+    fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
         let mut attributes =
             String::with_capacity(const { "Extension".len() + "PartName".len() + 32 });
 

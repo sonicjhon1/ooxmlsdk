@@ -124,7 +124,7 @@ pub trait Serializeable {
 
     const NAME: &str;
 
-    fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String>;
+    fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String>;
 
     fn xml_inner(&self, with_xmlns: bool) -> Option<String>;
 

@@ -108,12 +108,12 @@ impl Serializeable for Relationships {
 
     const NAME: &str = "Relationships";
 
-    fn xml_tag_attributes(&self, needs_xmlns: bool) -> Option<String> {
+    fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
             const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
         );
 
-        if needs_xmlns && let Some(xmlns) = &self.xmlns {
+        if with_xmlns && let Some(xmlns) = &self.xmlns {
             attributes.push_str(&as_xml_attribute("xmlns", xmlns));
         }
 
@@ -218,7 +218,7 @@ impl Serializeable for Relationship {
 
     const NAME: &str = "Relationship";
 
-    fn xml_tag_attributes(&self, _needs_xmlns: bool) -> Option<String> {
+    fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
         let mut attributes =
             String::with_capacity(const { "Extension".len() + "ContentType".len() + 32 });
 
