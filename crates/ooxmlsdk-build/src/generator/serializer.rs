@@ -96,8 +96,12 @@ fn gen_schema_type(
                     == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
     {
         Some(quote! {
-          if with_xmlns && let Some(xmlns) = &self.xmlns {
-            #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
+          if with_xmlns{
+            if let Some(xmlns) = &self.xmlns {
+                #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
+            } else {
+                tracing::warn!("with_xmlns is true, but self.xmlns is None.");
+            }
           }
 
           for (key, value) in &self.xmlns_map {
