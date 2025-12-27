@@ -400,13 +400,19 @@ fn gen_schema_type(
           }
         });
 
+        //TODO: Strip out the namespace prefix first
         loop_children_stmt_opt = Some(parse_quote! {
           if let Some(e) = e_opt {
             match e.name().as_ref() {
               #( #loop_children_match_list )*
-              _ => Err(super::super::common::SdkError::CommonError(
-                #schema_class_name_formatted.to_string(),
-              ))?,
+              _ => {
+                tracing::warn!(
+                  "Skipping non-matching tag: ({}) from schema: ({})",
+                  String::from_utf8_lossy(e.name().as_ref()),
+                  #schema_class_name_formatted
+                );
+                continue;
+              },
             }
           }
         })
