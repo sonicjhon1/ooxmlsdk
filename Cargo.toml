@@ -70,7 +70,6 @@ readme.workspace = true
 [dependencies]
 quick-xml = { workspace = true }
 rootcause = { workspace = true }
-tempfile = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zip = { workspace = true, optional = true }

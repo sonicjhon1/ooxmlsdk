@@ -411,7 +411,6 @@ dependencies = [
  "ooxmlsdk-build",
  "quick-xml",
  "rootcause",
- "tempfile",
  "thiserror",
  "tracing",
  "zip",

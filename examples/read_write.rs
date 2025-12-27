@@ -7,8 +7,7 @@ use ooxmlsdk::{
     schemas::schemas_openxmlformats_org_spreadsheetml_2006_main::Worksheet,
 };
 use rootcause::prelude::*;
-use std::{fs::File, io::BufReader};
-use tempfile::tempfile;
+use std::{fs::File, io::{BufReader, Cursor}};
 
 const SAMPLE_DOCX_FILE_PATH: &str = "examples/samples/demo.docx";
 const SAMPLE_PPTX_FILE_PATH: &str = "examples/samples/demo.pptx";
@@ -35,7 +34,7 @@ fn main() -> Result<(), Report> {
             docx_xml
         );
 
-        let temp_docx_file = tempfile()?;
+        let temp_docx_file = Cursor::new(Vec::new());
         docx.save(temp_docx_file)?;
     }
 
@@ -58,7 +57,7 @@ fn main() -> Result<(), Report> {
             pptx_xml
         );
 
-        let temp_pptx_file = tempfile()?;
+        let temp_pptx_file = Cursor::new(Vec::new());
         pptx.save(temp_pptx_file)?;
     }
 
@@ -78,7 +77,7 @@ fn main() -> Result<(), Report> {
             xlsx_xml
         );
 
-        let temp_xlsx_file = tempfile()?;
+        let temp_xlsx_file = Cursor::new(Vec::new());
         xlsx.save(temp_xlsx_file)?;
     }
 
