@@ -20,6 +20,8 @@ pub mod includes;
 pub mod models;
 pub mod utils;
 
+const CLIPPY_ALLOW: &str = "#![allow(clippy::possible_missing_else)]\n";
+
 pub fn generate(out_dir: impl AsRef<Path>) -> Result<(), BuildErrorReport> {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
 
@@ -299,7 +301,7 @@ pub(crate) fn generate_pub_item_mod(
 ) -> Result<String, BuildErrorReport> {
     fs::write(
         directory.join(module_name).with_extension("rs"),
-        module_content,
+        CLIPPY_ALLOW.to_owned() + module_content,
     )
     .map_err(BuildError::from)?;
 
