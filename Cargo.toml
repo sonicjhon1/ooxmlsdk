@@ -19,7 +19,7 @@ readme = "README.md"
 criterion = "0.8"
 heck = "0.5"
 ooxmlsdk-build = { path = "crates/ooxmlsdk-build" }
-proc-macro2 = "1.0.103"
+proc-macro2 = "1.0.104"
 quick-xml = "0.38"
 quote = "1.0.42"
 rootcause = "0.11"
