@@ -117,6 +117,14 @@ impl OpenXmlSchemaType {
 
         return child_map;
     }
+
+    #[inline(always)]
+    pub fn child_iter(&self) -> impl Iterator<Item = (&str, &OpenXmlSchemaTypeChild)> {
+        return self
+            .children
+            .iter()
+            .map(|child| (child.name.as_str(), child));
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

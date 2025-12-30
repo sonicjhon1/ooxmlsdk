@@ -3,6 +3,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::report;
+use std::collections::HashMap;
 use syn::{Ident, ImplItemFn, Stmt, Type, parse_quote, parse_str};
 
 use crate::{
@@ -348,20 +349,18 @@ fn gen_inner_writer(
                 attributes_writer.push(gen_attr(attribute, attributes_ident));
             }
 
-            let mut children = schema_type
-                .children
-                .iter()
-                .chain(base_class_type.children.iter())
-                .peekable();
+            // Children must be deduped
+            let children: HashMap<_, _> =
+                HashMap::from_iter(base_class_type.child_iter().chain(schema_type.child_iter()));
 
-            if children.peek().is_some() {
+            if children.is_empty() {
                 if base_class_type.base_class == "OpenXmlLeafTextElement" {
                     return Ok(Some(quote! {
                       if let Some(xml_content) = &self.xml_content {
                         #xml_inner_ident.push_str(&quick_xml::escape::escape(xml_content.to_string()));
                       }
                     }));
-                }
+                };
 
                 return Ok(None);
             }
@@ -377,7 +376,7 @@ fn gen_inner_writer(
             };
 
             return Ok(gen_children_match(
-                children,
+                children.into_values(),
                 &child_choice_enum_type,
                 xml_inner_ident,
             ));
