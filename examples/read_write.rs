@@ -7,7 +7,10 @@ use ooxmlsdk::{
     schemas::schemas_openxmlformats_org_spreadsheetml_2006_main::Worksheet,
 };
 use rootcause::prelude::*;
-use std::{fs::File, io::{BufReader, Cursor}};
+use std::{
+    fs::File,
+    io::{BufReader, Cursor},
+};
 
 const SAMPLE_DOCX_FILE_PATH: &str = "examples/samples/demo.docx";
 const SAMPLE_PPTX_FILE_PATH: &str = "examples/samples/demo.pptx";
