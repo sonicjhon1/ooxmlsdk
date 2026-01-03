@@ -25,7 +25,7 @@ quote = "1.0.42"
 rootcause = "0.11"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
-syn = "2.0.111"
+syn = "2.0.112"
 tempfile = "3.24"
 thiserror = "2.0"
 tracing = "0.1"
