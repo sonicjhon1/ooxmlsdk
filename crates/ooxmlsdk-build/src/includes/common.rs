@@ -95,6 +95,7 @@ pub trait Deserializeable: Sized {
     fn from_str(str: impl AsRef<str>) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = quick_xml::Reader::from_str(str.as_ref());
         xml_reader.config_mut().check_end_names = false;
+        xml_reader.config_mut().trim_text(false);
 
         Self::deserialize_inner(&mut SliceReader::new(xml_reader), None)
     }
@@ -102,6 +103,7 @@ pub trait Deserializeable: Sized {
     fn from_reader(reader: impl BufRead) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = quick_xml::Reader::from_reader(reader);
         xml_reader.config_mut().check_end_names = false;
+        xml_reader.config_mut().trim_text(false);
 
         Self::deserialize_inner(&mut IoReader::new(xml_reader), None)
     }
@@ -109,6 +111,7 @@ pub trait Deserializeable: Sized {
     fn from_file(path: impl AsRef<Path>) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = quick_xml::Reader::from_file(path).map_err(SdkError::from)?;
         xml_reader.config_mut().check_end_names = false;
+        xml_reader.config_mut().trim_text(false);
 
         Self::deserialize_inner(&mut IoReader::new(xml_reader), None)
     }
