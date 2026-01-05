@@ -1,6 +1,7 @@
 use heck::ToUpperCamelCase;
 use quote::quote;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rootcause::option_ext::OptionExt;
 use std::collections::HashMap;
 use syn::{Arm, Ident, Stmt, Type, parse_str, parse2};
 
@@ -127,7 +128,7 @@ fn gen_schema_type(
 
                 let child_rename_ser_str = child_name_list
                     .last()
-                    .ok_or(format!("{:?}", child.name))
+                    .context_with(|| format!("{:?}", child.name))
                     .unwrap();
 
                 let child_variant_name_ident: Ident =
@@ -227,7 +228,7 @@ fn gen_schema_type(
 
                 let child_rename_ser_str = child_name_list
                     .last()
-                    .ok_or(format!("{:?}", child.name))
+                    .context_with(|| format!("{:?}", child.name))
                     .unwrap();
 
                 let child_variant_name_ident: Ident =

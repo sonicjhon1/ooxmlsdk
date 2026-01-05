@@ -1,5 +1,6 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
+use rootcause::option_ext::OptionExt;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
@@ -194,10 +195,11 @@ impl Deserializeable for Default {
             }
         }
 
-        let extension = extension.ok_or_else(|| SdkError::CommonError("extension".to_string()))?;
+        let extension =
+            extension.context_with(|| SdkError::CommonError("extension".to_string()))?;
 
         let content_type =
-            content_type.ok_or_else(|| SdkError::CommonError("content_type".to_string()))?;
+            content_type.context_with(|| SdkError::CommonError("content_type".to_string()))?;
 
         Ok(Self {
             extension,
@@ -263,9 +265,10 @@ impl Deserializeable for Override {
         }
 
         let content_type =
-            content_type.ok_or_else(|| SdkError::CommonError("content_type".into()))?;
+            content_type.context_with(|| SdkError::CommonError("content_type".to_string()))?;
 
-        let part_name = part_name.ok_or_else(|| SdkError::CommonError("part_name".to_string()))?;
+        let part_name =
+            part_name.context_with(|| SdkError::CommonError("part_name".to_string()))?;
 
         Ok(Self {
             content_type,

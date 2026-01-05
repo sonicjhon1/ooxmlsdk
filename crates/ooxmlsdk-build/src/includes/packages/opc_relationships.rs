@@ -1,6 +1,6 @@
-use quick_xml::events::BytesStart;
-
 use super::super::common::*;
+use quick_xml::events::BytesStart;
+use rootcause::option_ext::OptionExt;
 
 #[derive(Clone, Debug, Default)]
 pub struct Relationships {
@@ -198,11 +198,11 @@ impl Deserializeable for Relationship {
             }
         }
 
-        let target = target.ok_or_else(|| SdkError::CommonError("target".to_string()))?;
+        let target = target.context_with(|| SdkError::CommonError("target".to_string()))?;
 
-        let r#type = r#type.ok_or_else(|| SdkError::CommonError("type".to_string()))?;
+        let r#type = r#type.context_with(|| SdkError::CommonError("type".to_string()))?;
 
-        let id = id.ok_or_else(|| SdkError::CommonError("id".to_string()))?;
+        let id = id.context_with(|| SdkError::CommonError("id".to_string()))?;
 
         Ok(Self {
             target_mode,
