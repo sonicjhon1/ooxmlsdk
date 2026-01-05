@@ -1,11 +1,12 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
 use rootcause::option_ext::OptionExt;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Relationships {
     pub xmlns: Option<String>,
-    pub xmlns_map: std::collections::HashMap<String, String>,
+    pub xmlns_map: BTreeMap<String, String>,
     pub mc_ignorable: Option<String>,
     pub relationship: Vec<Relationship>,
 }
@@ -20,7 +21,7 @@ impl Deserializeable for Relationships {
 
         let mut xmlns = None;
 
-        let mut xmlns_map = std::collections::HashMap::<String, String>::new();
+        let mut xmlns_map = BTreeMap::<String, String>::new();
 
         let mut mc_ignorable = None;
 

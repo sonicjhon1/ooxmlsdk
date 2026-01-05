@@ -85,7 +85,7 @@ fn gen_schema_type(
             });
 
             fields.push(quote! {
-                pub xmlns_map: std::collections::HashMap<String, String>,
+                pub xmlns_map: std::collections::BTreeMap<String, String>,
             });
 
             fields.push(quote! {

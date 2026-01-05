@@ -1,12 +1,12 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
 use rootcause::option_ext::OptionExt;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Types {
     pub xmlns: Option<String>,
-    pub xmlns_map: HashMap<String, String>,
+    pub xmlns_map: BTreeMap<String, String>,
     pub mc_ignorable: Option<String>,
     pub children: Vec<TypesChildChoice>,
 }
@@ -27,7 +27,7 @@ impl Deserializeable for Types {
         let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"w:Types", b"Types")?;
 
         let mut xmlns = None;
-        let mut xmlns_map = HashMap::<String, String>::new();
+        let mut xmlns_map = BTreeMap::<String, String>::new();
         let mut mc_ignorable = None;
 
         let mut children = vec![];

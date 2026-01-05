@@ -1,10 +1,11 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct CoreProperties {
     pub xmlns: Option<String>,
-    pub xmlns_map: std::collections::HashMap<String, String>,
+    pub xmlns_map: BTreeMap<String, String>,
     pub mc_ignorable: Option<String>,
     pub category: Option<String>,
     pub content_status: Option<String>,
@@ -37,7 +38,7 @@ impl Deserializeable for CoreProperties {
 
         let mut xmlns = None;
 
-        let mut xmlns_map = std::collections::HashMap::<String, String>::new();
+        let mut xmlns_map = BTreeMap::<String, String>::new();
 
         let mut mc_ignorable = None;
 

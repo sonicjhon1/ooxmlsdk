@@ -117,7 +117,7 @@ fn gen_schema_type(
             });
 
             field_declaration_list.push(parse_quote! {
-              let mut xmlns_map = std::collections::HashMap::<String, String>::new();
+              let mut xmlns_map = std::collections::BTreeMap::<String, String>::new();
             });
 
             field_declaration_list.push(parse_quote! {
