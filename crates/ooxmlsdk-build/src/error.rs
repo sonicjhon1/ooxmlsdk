@@ -9,6 +9,6 @@ pub enum BuildError {
     IOError(#[from] std::io::Error),
     #[error("Syn error: {_0}")]
     SynError(#[from] syn::Error),
-    #[error("Expected {_0} to exist, but found None")]
+    #[error("Expected ({_0}) to exist, but found None")]
     HashMapExpectedSomeError(String),
 }
