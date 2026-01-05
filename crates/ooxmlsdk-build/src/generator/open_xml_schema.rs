@@ -7,10 +7,7 @@ use syn::{Ident, ItemEnum, Type, Variant, parse_str, parse2};
 use crate::{
     error::*,
     generator::{context::GenContext, simple_type::simple_type_mapping},
-    models::{
-        Occurrence, OpenXmlNamespace, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
-        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
-    },
+    models::*,
     utils::HashMapOpsError,
 };
 
@@ -129,7 +126,8 @@ fn gen_schema_type(
             fields.push(gen_attr(attr, schema_namespace, gen_context)?);
         }
 
-        if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+        if schema_type.is_one_sequence_flatten()
+            && base_class_type.composite_type == Some(CompositeType::OneSequence)
         {
             let one_sequence_fields =
                 gen_one_sequence_fields(schema_type, schema_namespace, gen_context)?;

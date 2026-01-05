@@ -3,6 +3,7 @@ use crate::{
     utils::{escape_snake_case, escape_upper_camel_case},
 };
 use heck::ToUpperCamelCase;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use syn::{Ident, parse_str};
@@ -76,7 +77,7 @@ pub struct OpenXmlSchemaType {
     pub summary: String,
     pub version: String,
     pub part: String,
-    pub composite_type: String,
+    pub composite_type: Option<CompositeType>,
     pub base_class: String,
     pub is_leaf_text: bool,
     pub is_leaf_element: bool,
@@ -92,12 +93,13 @@ pub struct OpenXmlSchemaType {
 impl OpenXmlSchemaType {
     #[inline(always)]
     pub fn is_one_sequence_flatten(&self) -> bool {
-        (self.composite_type == "OneSequence" || self.particle.kind == "Sequence")
+        (self.composite_type == Some(CompositeType::OneSequence)
+            || self.particle.kind == Some(ParticleKind::Sequence))
             && self
                 .particle
                 .items
-                .iter()
-                .all(|p| p.kind.is_empty() && p.items.is_empty())
+                .par_iter()
+                .all(|p| p.kind.is_none() && p.items.is_empty())
     }
 
     #[inline(always)]
@@ -125,6 +127,13 @@ impl OpenXmlSchemaType {
             .iter()
             .map(|child| (child.name.as_str(), child));
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
+pub enum CompositeType {
+    OneAll,
+    OneChoice,
+    OneSequence,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -234,7 +243,7 @@ impl OpenXmlSchemaTypeChild {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct OpenXmlSchemaTypeParticle {
-    pub kind: String,
+    pub kind: Option<ParticleKind>,
     pub name: String,
     pub occurs: Vec<OpenXmlSchemaTypeParticleOccur>,
     pub items: Vec<OpenXmlSchemaTypeParticle>,
@@ -250,7 +259,7 @@ impl OpenXmlSchemaTypeParticle {
             .retain(|x| check_office_version(&x.initial_version));
 
         for item in self.items.iter_mut() {
-            if !item.kind.is_empty() {
+            if item.kind.is_none() {
                 item.check_particle_version();
             }
         }
@@ -265,6 +274,15 @@ impl OpenXmlSchemaTypeParticle {
             Occurrence::Repeated
         }
     }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize, Serialize)]
+pub enum ParticleKind {
+    All,
+    Any,
+    Choice,
+    Group,
+    Sequence,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]

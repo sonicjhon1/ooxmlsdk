@@ -9,10 +9,7 @@ use syn::{Ident, ImplItemFn, Stmt, Type, parse_quote, parse_str};
 use crate::{
     GenContext,
     error::*,
-    models::{
-        Occurrence, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
-        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild,
-    },
+    models::*,
     utils::{HashMapOpsError, gen_use_common_glob},
 };
 
@@ -367,7 +364,7 @@ fn gen_inner_writer(
 
             if schema_type.is_one_sequence_flatten()
                 //TODO: Check if its the same without this
-                && base_class_type.composite_type == "OneSequence"
+                && base_class_type.composite_type == Some(CompositeType::OneSequence)
             {
                 return Ok(Some(gen_sequence_flatten_match(
                     schema_type,

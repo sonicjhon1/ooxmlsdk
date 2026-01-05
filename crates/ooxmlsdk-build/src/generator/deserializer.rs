@@ -7,10 +7,7 @@ use syn::{Arm, Ident, ItemFn, LitByteStr, Stmt, Type, parse_quote, parse_str, pa
 use crate::{
     error::*,
     generator::{context::GenContext, simple_type::simple_type_mapping},
-    models::{
-        Occurrence, OpenXmlSchema, OpenXmlSchemaEnum, OpenXmlSchemaType,
-        OpenXmlSchemaTypeAttribute, OpenXmlSchemaTypeChild, OpenXmlSchemaTypeParticle,
-    },
+    models::*,
     utils::HashMapOpsError,
 };
 
@@ -211,7 +208,8 @@ fn gen_schema_type(
             attributes.push(attr);
         }
 
-        if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+        if schema_type.is_one_sequence_flatten()
+            && base_class_type.composite_type == Some(CompositeType::OneSequence)
         {
             for schema_type_particle in &schema_type.particle.items {
                 let child = child_map.try_get(schema_type_particle.name.as_str())?;
@@ -268,7 +266,8 @@ fn gen_schema_type(
         ))
         .map_err(BuildError::from)?;
 
-        if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+        if schema_type.is_one_sequence_flatten()
+            && base_class_type.composite_type == Some(CompositeType::OneSequence)
         {
             for schema_type_particle in &schema_type.particle.items {
                 let child = child_map.try_get(schema_type_particle.name.as_str())?;

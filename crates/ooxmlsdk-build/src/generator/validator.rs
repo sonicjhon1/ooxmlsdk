@@ -5,15 +5,7 @@ use rootcause::option_ext::OptionExt;
 use std::collections::HashMap;
 use syn::{Arm, Ident, Stmt, Type, parse_str, parse2};
 
-use crate::{
-    GenContext,
-    error::*,
-    models::{
-        Occurrence, OpenXmlSchema, OpenXmlSchemaType, OpenXmlSchemaTypeAttribute,
-        OpenXmlSchemaTypeChild,
-    },
-    utils::HashMapOpsError,
-};
+use crate::{GenContext, error::*, models::*, utils::HashMapOpsError};
 
 pub fn gen_validators(
     schema: &OpenXmlSchema,
@@ -166,7 +158,8 @@ fn gen_schema_type(
             attr_validator_stmt_list.extend(gen_attr_validator_stmt_list(attr));
         }
 
-        if schema_type.is_one_sequence_flatten() && base_class_type.composite_type == "OneSequence"
+        if schema_type.is_one_sequence_flatten()
+            && base_class_type.composite_type == Some(CompositeType::OneSequence)
         {
             let mut child_map: HashMap<&str, &OpenXmlSchemaTypeChild> = HashMap::new();
 
