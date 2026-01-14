@@ -6,8 +6,6 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default)]
 pub struct Relationships {
     pub xmlns: Option<String>,
-    pub xmlns_map: BTreeMap<String, String>,
-    pub mc_ignorable: Option<String>,
     pub relationship: Vec<Relationship>,
 }
 
@@ -17,13 +15,11 @@ impl Deserializeable for Relationships {
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
         let (e, empty_tag) =
-            expect_event_start(xml_reader, xml_event, b"w:Relationships", b"Relationships")?;
+            expect_event_start(xml_reader, xml_event, b"Relationships", b"Relationships")?;
 
         let mut xmlns = None;
 
         let mut xmlns_map = BTreeMap::<String, String>::new();
-
-        let mut mc_ignorable = None;
 
         let mut relationship = vec![];
 
@@ -32,13 +28,6 @@ impl Deserializeable for Relationships {
             match attr.key.as_ref() {
                 b"xmlns" => {
                     xmlns = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())
-                            .map_err(SdkError::from)?
-                            .to_string(),
-                    );
-                }
-                b"mc:Ignorable" => {
-                    mc_ignorable = Some(
                         attr.decode_and_unescape_value(xml_reader.decoder())
                             .map_err(SdkError::from)?
                             .to_string(),
@@ -70,26 +59,23 @@ impl Deserializeable for Relationships {
                         e_empty = true;
                         e_opt = Some(e);
                     }
-                    quick_xml::events::Event::End(e) => match e.name().as_ref() {
-                        b"w:Relationships" | b"Relationships" => {
+                    quick_xml::events::Event::End(e) => {
+                        if e.name().as_ref() == b"Relationships" {
                             break;
                         }
-                        _ => (),
-                    },
+                    }
                     quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
                     _ => (),
                 }
 
                 if let Some(e) = e_opt {
-                    match e.name().as_ref() {
-                        b"w:Relationship" | b"Relationship" => {
-                            relationship.push(Relationship::deserialize_inner(
-                                xml_reader,
-                                Some((e, e_empty)),
-                            )?);
-                        }
-
-                        _ => Err(SdkError::CommonError("Types".to_string()))?,
+                    if e.name().as_ref() == b"Relationship" {
+                        relationship.push(Relationship::deserialize_inner(
+                            xml_reader,
+                            Some((e, e_empty)),
+                        )?);
+                    } else {
+                        return Err(SdkError::CommonError("Types".to_string()))?;
                     }
                 }
             }
@@ -97,33 +83,21 @@ impl Deserializeable for Relationships {
 
         Ok(Self {
             xmlns,
-            xmlns_map,
-            mc_ignorable,
             relationship,
         })
     }
 }
 
 impl Serializeable for Relationships {
-    const PREFIXED_NAME: &str = "w:Relationships";
+    const PREFIXED_NAME: &str = "Relationships";
 
     const NAME: &str = "Relationships";
 
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
-        let mut attributes = String::with_capacity(
-            const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
-        );
+        let mut attributes = String::with_capacity(const { "xmlns".len() + 32 });
 
         if with_xmlns && let Some(xmlns) = &self.xmlns {
             attributes.push_str(&as_xml_attribute("xmlns", xmlns));
-        }
-
-        for (key, value) in &self.xmlns_map {
-            attributes.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
-        }
-
-        if let Some(mc_ignorable) = &self.mc_ignorable {
-            attributes.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
         }
 
         return Some(attributes);
