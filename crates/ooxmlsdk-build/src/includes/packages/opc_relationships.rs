@@ -1,6 +1,6 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
-use rootcause::option_ext::OptionExt;
+use rootcause::{option_ext::OptionExt, prelude::ResultExt};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
@@ -75,7 +75,8 @@ impl Deserializeable for Relationships {
                             Some((e, e_empty)),
                         )?);
                     } else {
-                        return Err(SdkError::CommonError("Types".to_string()))?;
+                        return Err(SdkError::CommonError("Types".to_string()))
+                            .attach(String::from_utf8_lossy(e.name().into_inner()).to_string())?;
                     }
                 }
             }
