@@ -128,7 +128,7 @@ impl Deserializeable for Relationship {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Relationship", b"Relationship")?;
+        let (e, _) = expect_event_start(xml_reader, xml_event, b"Relationship", b"Relationship")?;
 
         let mut target_mode = None;
 
@@ -190,7 +190,7 @@ impl Deserializeable for Relationship {
 }
 
 impl Serializeable for Relationship {
-    const PREFIXED_NAME: &str = "w:Relationship";
+    const PREFIXED_NAME: &str = "Relationship";
 
     const NAME: &str = "Relationship";
 
