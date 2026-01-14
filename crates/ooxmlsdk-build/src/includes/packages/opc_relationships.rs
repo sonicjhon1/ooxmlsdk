@@ -195,8 +195,9 @@ impl Serializeable for Relationship {
     const NAME: &str = "Relationship";
 
     fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
-        let mut attributes =
-            String::with_capacity(const { "Extension".len() + "ContentType".len() + 32 });
+        let mut attributes = String::with_capacity(
+            const { "TargetMode".len() + "Target".len() + "Type".len() + "Id".len() + 32 },
+        );
 
         if let Some(target_mode) = &self.target_mode {
             attributes.push_str(&as_xml_attribute("TargetMode", &target_mode.to_string()));
