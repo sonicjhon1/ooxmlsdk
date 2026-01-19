@@ -212,7 +212,7 @@ impl Serializeable for Relationship {
     fn xml_inner(&self, _with_xmlns: bool) -> Option<String> { None }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 pub enum TargetMode {
     #[default]
     External,

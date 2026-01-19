@@ -157,7 +157,7 @@ impl Serializeable for Types {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct Default {
     pub extension: String,
     pub content_type: String,

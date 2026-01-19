@@ -224,7 +224,7 @@ fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> Result<String, BuildError
     }
 
     return Ok(quote! {
-        #[derive(Clone, Debug, Default)]
+        #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
         pub enum #enum_name_ident {
             #( #variants, )*
         }
