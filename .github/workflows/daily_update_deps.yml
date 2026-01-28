@@ -39,9 +39,17 @@ jobs:
           base: main
           delete-branch: true
         env:
-          GITHUB_TOKEN: ${{ secrets.BOT_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Enable PR automerge
         run: gh pr merge --squash --auto ${{ steps.cpr.outputs.pull-request-number }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  run-examples:
+    needs: ["update-deps"]
+    uses: ./.github/workflows/run_examples.yml
+
+  run-tests:
+    needs: ["update-deps"]
+    uses: ./.github/workflows/run_tests.yml
