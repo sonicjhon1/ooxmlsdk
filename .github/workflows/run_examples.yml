@@ -1,0 +1,23 @@
+name: Run examples
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Run read_write
+        run: cargo run --example read_write --features="docx pptx xlsx office2010 parts validators"

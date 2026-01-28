@@ -10,7 +10,7 @@ permissions:
     pull-requests: write
 
 jobs:
-    sync-data:
+    update-deps:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout main branch
