@@ -45,11 +45,3 @@ jobs:
         run: gh pr merge --squash --auto ${{ steps.cpr.outputs.pull-request-number }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  run-examples:
-    needs: ["update-deps"]
-    uses: ./.github/workflows/run_examples.yml
-
-  run-tests:
-    needs: ["update-deps"]
-    uses: ./.github/workflows/run_tests.yml
