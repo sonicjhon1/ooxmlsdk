@@ -22,13 +22,14 @@ jobs:
       - name: Setup toolchains
         uses: ./.github/workflows/setup-toolchains
         with:
-          cargo-edit: 'true'
+          cargo-edit: "true"
 
       - name: Run update script
         run: |
           chmod +x ./scripts/update_deps.rs && ./scripts/update_deps.rs
 
       - name: Create or update PR
+        id: cpr
         uses: peter-evans/create-pull-request@v8
         with:
           branch: ci/update-deps
@@ -39,3 +40,8 @@ jobs:
           delete-branch: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable PR automerge
+        run: gh pr merge --squash --auto ${{ steps.cpr.outputs.pull-request-number }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
