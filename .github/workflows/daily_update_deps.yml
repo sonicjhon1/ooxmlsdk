@@ -1,0 +1,39 @@
+name: Daily Update Dependencies
+
+on:
+    schedule:
+        - cron: "0 0 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    sync-data:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout main branch
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  ref: main
+
+            - name: Setup rust toolchain
+              uses: dtolnay/rust-toolchain@nightly
+
+            - name: Run update script
+              run: |
+                  chmod +x ./scripts/update_deps.rs && ./scripts/update_deps.rs
+
+            - name: Create or update PR
+              uses: peter-evans/create-pull-request@v8
+              with:
+                  branch: ci/update-deps
+                  commit-message: "chore: Update deps"
+                  title: "chore: Update deps"
+                  body: "Automatic update of dependencies."
+                  base: main
+                  delete-branch: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
