@@ -18,6 +18,8 @@ jobs:
 
       - name: Setup rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: "rustc-codegen-cranelift"
 
       - name: Run read_write
         run: cargo run --example read_write --features="docx pptx xlsx office2010 parts validators"

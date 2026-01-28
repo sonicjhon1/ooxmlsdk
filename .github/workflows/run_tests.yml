@@ -18,6 +18,8 @@ jobs:
 
       - name: Setup rust toolchain
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: "rustc-codegen-cranelift"
 
       - name: Setup nextest
         uses: taiki-e/install-action@nextest
