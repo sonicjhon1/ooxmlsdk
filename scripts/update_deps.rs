@@ -27,18 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("current_file_dir: {}", current_file_dir.display());
     info!("workspace_dir: {}", workspace_dir.display());
 
-    install_script_deps()?;
     update_cargo_deps(workspace_dir)?;
-
-    Ok(())
-}
-
-fn install_script_deps() -> Result<(), Box<dyn std::error::Error>> {
-    assert!(
-        run_command(Command::new("cargo").args(["install", "cargo-edit"]))?
-            .status
-            .success()
-    );
 
     Ok(())
 }
