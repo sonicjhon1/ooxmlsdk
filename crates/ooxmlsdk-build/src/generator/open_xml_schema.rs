@@ -362,6 +362,7 @@ fn gen_children(
 
     let enum_option = parse2(quote! {
         #[derive(Clone, Debug, derive_more::From, derive_more::IsVariant, derive_more::TryUnwrap)]
+        #[try_unwrap(ref_mut)]
         pub enum #child_choice_enum_ident {
             #( #variants )*
         }
