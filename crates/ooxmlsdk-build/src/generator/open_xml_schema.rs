@@ -100,18 +100,17 @@ fn gen_schema_type(
 
             fields.extend(one_sequence_fields);
         } else {
-            let (field_option, enum_option) = gen_children(
+            let children = gen_children(
                 &schema_type.class_name,
                 &schema_type.children,
                 schema_namespace,
                 gen_context,
             )?;
 
-            if let Some(field) = field_option {
+            if let Some((field, child_choice_enum)) = children {
                 fields.push(field);
+                child_choice_enum_option = Some(child_choice_enum);
             }
-
-            child_choice_enum_option = enum_option;
         }
     } else if schema_type.is_derived {
         let base_class_type = gen_context
@@ -134,18 +133,17 @@ fn gen_schema_type(
 
             fields.extend(one_sequence_fields);
         } else {
-            let (field_option, enum_option) = gen_children(
+            let children = gen_children(
                 &schema_type.class_name,
                 &schema_type.children,
                 schema_namespace,
                 gen_context,
             )?;
 
-            if let Some(field) = field_option {
+            if let Some((field, child_choice_enum)) = children {
                 fields.push(field);
+                child_choice_enum_option = Some(child_choice_enum);
             }
-
-            child_choice_enum_option = enum_option;
         }
 
         if schema_type.children.is_empty() && base_class_type.base_class == "OpenXmlLeafTextElement"
@@ -321,17 +319,17 @@ fn gen_children(
     children: &Vec<OpenXmlSchemaTypeChild>,
     schema_namespace: &OpenXmlNamespace,
     gen_context: &GenContext,
-) -> Result<(Option<TokenStream>, Option<ItemEnum>), BuildErrorReport> {
+) -> Result<Option<(TokenStream, ItemEnum)>, BuildErrorReport> {
     if children.is_empty() {
-        return Ok((None, None));
+        return Ok(None);
     }
 
     let child_choice_enum_ident: Ident =
         parse_str(&format!("{}ChildChoice", class_name.to_upper_camel_case())).unwrap();
 
-    let field_option = Some(quote! {
+    let field_option = quote! {
         pub children: Vec<#child_choice_enum_ident>,
-    });
+    };
 
     let mut variants: Vec<TokenStream> = vec![];
 
@@ -357,22 +355,20 @@ fn gen_children(
         let child_variant_name_ident = child.as_last_name_ident();
 
         variants.push(quote! {
+            #[from(#child_variant_type)]
             #child_variant_name_ident(std::boxed::Box<#child_variant_type>),
         });
     }
 
-    let enum_option = Some(
-        parse2(quote! {
-            #[derive(Clone, Debug, derive_more::From, derive_more::IsVariant, derive_more::TryUnwrap)]
-            #[from(forward)]
-            pub enum #child_choice_enum_ident {
-                #( #variants )*
-            }
-        })
-        .unwrap(),
-    );
+    let enum_option = parse2(quote! {
+        #[derive(Clone, Debug, derive_more::From, derive_more::IsVariant, derive_more::TryUnwrap)]
+        pub enum #child_choice_enum_ident {
+            #( #variants )*
+        }
+    })
+    .map_err(BuildError::from)?;
 
-    Ok((field_option, enum_option))
+    Ok(Some((field_option, enum_option)))
 }
 
 fn gen_xml_content_type(
