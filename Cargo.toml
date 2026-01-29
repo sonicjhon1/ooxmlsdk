@@ -17,6 +17,11 @@ readme = "README.md"
 
 [workspace.dependencies]
 criterion = "0.8"
+derive_more = { version = "2.1", features = [
+    "from",
+    "is_variant",
+    "try_unwrap",
+] }
 heck = "0.5"
 ooxmlsdk-build = { path = "crates/ooxmlsdk-build" }
 proc-macro2 = "1.0.106"
@@ -68,6 +73,7 @@ office2021 = ["ooxmlsdk-build/office2021"]
 microsoft365 = ["ooxmlsdk-build/microsoft365"]
 
 [dependencies]
+derive_more = { workspace = true }
 quick-xml = { workspace = true }
 rootcause = { workspace = true }
 thiserror = { workspace = true }
