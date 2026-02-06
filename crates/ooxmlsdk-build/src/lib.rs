@@ -20,7 +20,7 @@ pub mod includes;
 pub mod models;
 pub mod utils;
 
-const CLIPPY_ALLOW: &str = "#![allow(clippy::possible_missing_else)]\n";
+const CLIPPY_ALLOW: &str = "#![allow(clippy::possible_missing_else)]\n#![allow(non_snake_case)]\n#![allow(irrefutable_let_patterns)]\n";
 
 pub fn generate(out_dir: impl AsRef<Path>) -> Result<(), BuildErrorReport> {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
