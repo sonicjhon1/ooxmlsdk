@@ -2,7 +2,7 @@ use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use syn::{Ident, ImplItemFn, ItemEnum, ItemImpl, Type, Variant, parse_quote, parse_str, parse2};
+use syn::{Ident, ImplItemFn, ItemEnum, ItemImpl, Type, Variant, parse_quote, parse_str};
 
 use crate::{
     error::*,
@@ -31,7 +31,7 @@ pub fn gen_open_xml_schemas(
             .enums
             .par_iter()
             .map(gen_schema_enum)
-            .collect::<Result<Vec<_>, _>>()?
+            .collect::<Vec<_>>()
             .join("\n"),
     );
 
@@ -169,8 +169,7 @@ fn gen_schema_type(
         unreachable!("{schema_type:?}");
     }
 
-    let struct_name_ident: Ident =
-        parse_str(&schema_type.class_name.to_upper_camel_case()).unwrap();
+    let struct_name_ident = format_ident!("{}", schema_type.class_name.to_upper_camel_case());
 
     let summary_doc = format!(" {}", schema_type.summary);
 
@@ -208,9 +207,8 @@ fn gen_schema_type(
     .to_string());
 }
 
-fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> Result<String, BuildErrorReport> {
-    let enum_name_ident: Ident =
-        parse_str(&schema_enum.name.to_upper_camel_case()).map_err(BuildError::from)?;
+fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> String {
+    let enum_name_ident = format_ident!("{}", schema_enum.name.to_upper_camel_case());
 
     let mut variants: Vec<Variant> = vec![];
 
@@ -218,30 +216,24 @@ fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> Result<String, BuildError
         let variant_ident = schema_enum_facet.as_variant_ident();
 
         if i == 0 {
-            variants.push(
-                parse2(quote! {
-                    #[default]
-                    #variant_ident
-                })
-                .unwrap(),
-            );
+            variants.push(parse_quote! {
+                #[default]
+                #variant_ident
+            });
         } else {
-            variants.push(
-                parse2(quote! {
-                    #variant_ident
-                })
-                .unwrap(),
-            );
+            variants.push(parse_quote! {
+                #variant_ident
+            });
         }
     }
 
-    return Ok(quote! {
+    return quote! {
         #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
         pub enum #enum_name_ident {
             #( #variants, )*
         }
     }
-    .to_string());
+    .to_string();
 }
 
 fn gen_attr(
@@ -303,7 +295,7 @@ fn gen_attr(
     };
 
     let qualified_doc = format!(
-        " Represents the following attribute in the schema: {}",
+        " Represents the following attribute in the schema: ({})",
         schema.as_name_str()
     );
 
@@ -373,7 +365,7 @@ fn gen_children_enum(
         return Ok(None);
     }
 
-    let enum_ident: Ident = format_ident!("{}ChildChoice", class_name.to_upper_camel_case());
+    let enum_ident = format_ident!("{}ChildChoice", class_name.to_upper_camel_case());
 
     let mut enum_variants: Vec<Variant> = Vec::with_capacity(children.len());
     let mut enum_methods: Vec<ImplItemFn> = Vec::with_capacity(children.len());
@@ -386,10 +378,10 @@ fn gen_children_enum(
             #variant_ident(std::boxed::Box<#variant_type>)
         });
 
-        let is_variant_fn_ident: Ident = format_ident!("is_{variant_ident}");
-        let try_as_fn_ident: Ident = format_ident!("try_as_{variant_ident}");
-        let try_as_ref_fn_ident: Ident = format_ident!("try_as_ref_{variant_ident}");
-        let try_as_mut_fn_ident: Ident = format_ident!("try_as_mut_{variant_ident}");
+        let is_variant_fn_ident = format_ident!("is_{variant_ident}");
+        let try_as_fn_ident = format_ident!("try_as_{variant_ident}");
+        let try_as_ref_fn_ident = format_ident!("try_as_ref_{variant_ident}");
+        let try_as_mut_fn_ident = format_ident!("try_as_mut_{variant_ident}");
 
         enum_methods.extend([
             parse_quote! {

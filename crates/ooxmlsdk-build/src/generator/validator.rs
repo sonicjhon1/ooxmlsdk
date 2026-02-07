@@ -1,9 +1,9 @@
 use heck::ToUpperCamelCase;
-use quote::quote;
+use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::option_ext::OptionExt;
 use std::collections::HashMap;
-use syn::{Arm, Ident, Stmt, Type, parse_str, parse2};
+use syn::{Arm, Stmt, Type, parse_quote, parse_str};
 
 use crate::{GenContext, error::*, models::*, utils::HashMapOpsError};
 
@@ -72,36 +72,29 @@ fn gen_schema_type(
 
                 match schema_type_particle.as_occurrence() {
                     Occurrence::Required => {
-                        children_validator_stmt_list.push(
-                            parse2(quote! {
-                                if !self.#child_name_ident.validate()? {
-                                    return Ok(false);
-                                }
-                            })
-                            .unwrap(),
-                        );
+                        children_validator_stmt_list.push(parse_quote! {
+                            if !self.#child_name_ident.validate()? {
+                                return Ok(false);
+                            }
+                        });
                     }
                     Occurrence::Optional => {
                         children_validator_stmt_list.push(
-                                parse2(quote! {
-                                    if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
-                                        return Ok(false);
-                                    }
-                                })
-                                .unwrap(),
+                            parse_quote! {
+                                if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
+                                    return Ok(false);
+                                }
+                            },
                         );
                     }
                     Occurrence::Repeated => {
-                        children_validator_stmt_list.push(
-                            parse2(quote! {
-                                for child in &self.#child_name_ident {
-                                    if !child.validate()? {
-                                        return Ok(false);
-                                    }
+                        children_validator_stmt_list.push(parse_quote! {
+                            for child in &self.#child_name_ident {
+                                if !child.validate()? {
+                                    return Ok(false);
                                 }
-                            })
-                            .unwrap(),
-                        );
+                            }
+                        });
                     }
                 }
             }
@@ -123,30 +116,24 @@ fn gen_schema_type(
                     .context_with(|| format!("{:?}", child.name))
                     .unwrap();
 
-                let child_variant_name_ident: Ident =
-                    parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
+                let child_variant_name_ident =
+                    format_ident!("{}", child_rename_ser_str.to_upper_camel_case());
 
-                child_match_arm_list.push(
-                    parse2(quote! {
-                        #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
-                            return Ok(false);
-                        },
-                    })
-                    .unwrap(),
-                );
+                child_match_arm_list.push(parse_quote! {
+                    #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
+                        return Ok(false);
+                    },
+                });
             }
 
             if !schema_type.children.is_empty() {
-                children_validator_stmt_list.push(
-                    parse2(quote! {
-                        for child in &self.children {
-                            match child {
-                                #( #child_match_arm_list )*
-                            }
+                children_validator_stmt_list.push(parse_quote! {
+                    for child in &self.children {
+                        match child {
+                            #( #child_match_arm_list )*
                         }
-                    })
-                    .unwrap(),
-                );
+                    }
+                });
             }
         }
     } else if schema_type.is_derived {
@@ -173,36 +160,29 @@ fn gen_schema_type(
 
                 match schema_type_particle.as_occurrence() {
                     Occurrence::Required => {
-                        children_validator_stmt_list.push(
-                            parse2(quote! {
-                                if !self.#child_name_ident.validate()? {
-                                    return Ok(false);
-                                }
-                            })
-                            .unwrap(),
-                        );
+                        children_validator_stmt_list.push(parse_quote! {
+                            if !self.#child_name_ident.validate()? {
+                                return Ok(false);
+                            }
+                        });
                     }
                     Occurrence::Optional => {
                         children_validator_stmt_list.push(
-                                parse2(quote! {
-                                    if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
-                                        return Ok(false);
-                                    }
-                                })
-                                .unwrap(),
-                            );
+                            parse_quote! {
+                                if let Some(#child_name_ident) = &self.#child_name_ident && !#child_name_ident.validate()? {
+                                    return Ok(false);
+                                }
+                            },
+                        );
                     }
                     Occurrence::Repeated => {
-                        children_validator_stmt_list.push(
-                            parse2(quote! {
-                                for child in &self.#child_name_ident {
-                                    if !child.validate()? {
-                                        return Ok(false);
-                                    }
+                        children_validator_stmt_list.push(parse_quote! {
+                            for child in &self.#child_name_ident {
+                                if !child.validate()? {
+                                    return Ok(false);
                                 }
-                            })
-                            .unwrap(),
-                        );
+                            }
+                        });
                     }
                 }
             }
@@ -224,30 +204,24 @@ fn gen_schema_type(
                     .context_with(|| format!("{:?}", child.name))
                     .unwrap();
 
-                let child_variant_name_ident: Ident =
-                    parse_str(&child_rename_ser_str.to_upper_camel_case()).unwrap();
+                let child_variant_name_ident =
+                    format_ident!("{}", child_rename_ser_str.to_upper_camel_case());
 
-                child_match_arm_list.push(
-                    parse2(quote! {
-                        #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
-                            return Ok(false);
-                        },
-                    })
-                    .unwrap(),
-                );
+                child_match_arm_list.push(parse_quote! {
+                    #child_choice_enum_type::#child_variant_name_ident(c) => if !c.validate()? {
+                        return Ok(false);
+                    },
+                });
             }
 
             if !schema_type.children.is_empty() {
-                children_validator_stmt_list.push(
-                    parse2(quote! {
-                      for child in &self.children {
-                        match child {
-                          #( #child_match_arm_list )*
-                        }
-                      }
-                    })
-                    .unwrap(),
-                );
+                children_validator_stmt_list.push(parse_quote! {
+                  for child in &self.children {
+                    match child {
+                      #( #child_match_arm_list )*
+                    }
+                  }
+                });
             }
         }
     } else {
@@ -297,42 +271,30 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                                 continue;
                             } else if value == 1 {
                                 if required {
-                                    attr_validator_stmt_list.push(
-                                        parse2(quote! {
-                                          if self.#attr_name_ident.is_empty() {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        })
-                                        .unwrap(),
-                                    );
+                                    attr_validator_stmt_list.push(parse_quote! {
+                                      if self.#attr_name_ident.is_empty() {
+                                        validator_results[#validator_count] = false;
+                                      }
+                                    });
                                 } else {
-                                    attr_validator_stmt_list.push(
-                                        parse2(quote! {
-                                          if #attr_name_ident.is_empty() {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        })
-                                        .unwrap(),
-                                    );
+                                    attr_validator_stmt_list.push(parse_quote! {
+                                      if #attr_name_ident.is_empty() {
+                                        validator_results[#validator_count] = false;
+                                      }
+                                    });
                                 }
                             } else if required {
-                                attr_validator_stmt_list.push(
-                                    parse2(quote! {
-                                      if self.#attr_name_ident.len() < #value {
-                                        validator_results[#validator_count] = false;
-                                      }
-                                    })
-                                    .unwrap(),
-                                );
+                                attr_validator_stmt_list.push(parse_quote! {
+                                  if self.#attr_name_ident.len() < #value {
+                                    validator_results[#validator_count] = false;
+                                  }
+                                });
                             } else {
-                                attr_validator_stmt_list.push(
-                                    parse2(quote! {
-                                      if #attr_name_ident.len() < #value {
-                                        validator_results[#validator_count] = false;
-                                      }
-                                    })
-                                    .unwrap(),
-                                );
+                                attr_validator_stmt_list.push(parse_quote! {
+                                  if #attr_name_ident.len() < #value {
+                                    validator_results[#validator_count] = false;
+                                  }
+                                });
                             }
                         }
                         "MaxLength" => {
@@ -341,23 +303,17 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                             let value: usize = argument.value.parse().unwrap();
 
                             if required {
-                                attr_validator_stmt_list.push(
-                                    parse2(quote! {
-                                      if self.#attr_name_ident.len() > #value {
-                                        validator_results[#validator_count] = false;
-                                      }
-                                    })
-                                    .unwrap(),
-                                );
+                                attr_validator_stmt_list.push(parse_quote! {
+                                  if self.#attr_name_ident.len() > #value {
+                                    validator_results[#validator_count] = false;
+                                  }
+                                });
                             } else {
-                                attr_validator_stmt_list.push(
-                                    parse2(quote! {
-                                      if #attr_name_ident.len() > #value {
-                                        validator_results[#validator_count] = false;
-                                      }
-                                    })
-                                    .unwrap(),
-                                );
+                                attr_validator_stmt_list.push(parse_quote! {
+                                  if #attr_name_ident.len() > #value {
+                                    validator_results[#validator_count] = false;
+                                  }
+                                });
                             }
                         }
                         _ => (),
@@ -365,12 +321,9 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                 }
 
                 if add_validator {
-                    attr_validator_stmt_list.push(
-                        parse2(quote! {
-                          validator_results[#validator_count] = true;
-                        })
-                        .unwrap(),
-                    );
+                    attr_validator_stmt_list.push(parse_quote! {
+                      validator_results[#validator_count] = true;
+                    });
 
                     validator_count += 1;
                 }
@@ -388,65 +341,51 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                             match schema.r#type.as_str() {
                                 "Int64Value" => {
                                     if required {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if self.#attr_name_ident < #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if self.#attr_name_ident < #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     } else {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if *#attr_name_ident < #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if *#attr_name_ident < #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     }
                                 }
                                 "StringValue" | "IntegerValue" | "SByteValue" | "DecimalValue" => {
                                     if required {
                                         attr_validator_stmt_list.push(
-                                            parse2(quote! {
+                                            parse_quote! {
                                               if self.#attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? < #value {
                                                 validator_results[#validator_count] = false;
                                               }
-                                            })
-                                            .unwrap(),
+                                            },
                                         );
                                     } else {
                                         attr_validator_stmt_list.push(
-                                            parse2(quote! {
+                                            parse_quote! {
                                               if #attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? < #value {
                                                 validator_results[#validator_count] = false;
                                               }
-                                            })
-                                            .unwrap(),
+                                            },
                                         );
                                     }
                                 }
                                 _ => {
                                     if required {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if (self.#attr_name_ident as i64) < #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if (self.#attr_name_ident as i64) < #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     } else {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if (*#attr_name_ident as i64) < #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if (*#attr_name_ident as i64) < #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     }
                                 }
                             }
@@ -459,65 +398,51 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                             match schema.r#type.as_str() {
                                 "Int64Value" => {
                                     if required {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if self.#attr_name_ident > #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if self.#attr_name_ident > #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     } else {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if *#attr_name_ident > #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if *#attr_name_ident > #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     }
                                 }
                                 "StringValue" | "IntegerValue" | "SByteValue" | "DecimalValue" => {
                                     if required {
                                         attr_validator_stmt_list.push(
-                                            parse2(quote! {
+                                            parse_quote! {
                                               if self.#attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? > #value {
                                                 validator_results[#validator_count] = false;
                                               }
-                                            })
-                                            .unwrap(),
+                                            },
                                         );
                                     } else {
                                         attr_validator_stmt_list.push(
-                                            parse2(quote! {
+                                            parse_quote! {
                                               if #attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? > #value {
                                                 validator_results[#validator_count] = false;
                                               }
-                                            })
-                                            .unwrap(),
+                                            },
                                         );
                                     }
                                 }
                                 _ => {
                                     if required {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if (self.#attr_name_ident as i64) > #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if (self.#attr_name_ident as i64) > #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     } else {
-                                        attr_validator_stmt_list.push(
-                                            parse2(quote! {
-                                              if (*#attr_name_ident as i64) > #value {
-                                                validator_results[#validator_count] = false;
-                                              }
-                                            })
-                                            .unwrap(),
-                                        );
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if (*#attr_name_ident as i64) > #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
                                     }
                                 }
                             }
@@ -527,12 +452,9 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
                 }
 
                 if add_validator {
-                    attr_validator_stmt_list.push(
-                        parse2(quote! {
-                          validator_results[#validator_count] = true;
-                        })
-                        .unwrap(),
-                    );
+                    attr_validator_stmt_list.push(parse_quote! {
+                      validator_results[#validator_count] = true;
+                    });
 
                     validator_count += 1;
                 }
@@ -542,40 +464,31 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
     }
 
     if required && validator_count > 0 {
-        let mut stmt_list = vec![
-            parse2(quote! {
-              let mut validator_results: Vec<bool> = vec![true; #validator_count];
-            })
-            .unwrap(),
-        ];
+        let mut stmt_list = vec![parse_quote! {
+          let mut validator_results: Vec<bool> = vec![true; #validator_count];
+        }];
 
         stmt_list.extend(attr_validator_stmt_list);
 
-        stmt_list.push(
-            parse2(quote! {
-              if !validator_results.into_iter().any(|x| x) {
-                return Ok(false);
-              }
-            })
-            .unwrap(),
-        );
+        stmt_list.push(parse_quote! {
+          if !validator_results.into_iter().any(|x| x) {
+            return Ok(false);
+          }
+        });
 
         stmt_list
     } else if validator_count > 0 {
-        vec![
-            parse2(quote! {
-              if let Some(#attr_name_ident) = &self.#attr_name_ident {
-                let mut validator_results: Vec<bool> = vec![true; #validator_count];
+        vec![parse_quote! {
+          if let Some(#attr_name_ident) = &self.#attr_name_ident {
+            let mut validator_results: Vec<bool> = vec![true; #validator_count];
 
-                #( #attr_validator_stmt_list )*
+            #( #attr_validator_stmt_list )*
 
-                if !validator_results.into_iter().any(|x| x) {
-                  return Ok(false);
-                }
-              }
-            })
-            .unwrap(),
-        ]
+            if !validator_results.into_iter().any(|x| x) {
+              return Ok(false);
+            }
+          }
+        }]
     } else {
         vec![]
     }

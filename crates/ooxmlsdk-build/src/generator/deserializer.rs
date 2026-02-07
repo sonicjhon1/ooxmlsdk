@@ -1,8 +1,8 @@
 use heck::ToUpperCamelCase;
-use quote::quote;
+use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashSet;
-use syn::{Arm, Ident, ItemFn, LitByteStr, Stmt, Type, parse_quote, parse_str, parse2};
+use syn::{Arm, Ident, ItemFn, LitByteStr, Stmt, Type, parse_quote, parse_str};
 
 use crate::{
     error::*,
@@ -90,9 +90,7 @@ fn gen_schema_type(
           let mut xml_content = None;
         });
 
-        field_ident_list.push(parse_quote! {
-          xml_content
-        });
+        field_ident_list.push(format_ident!("xml_content"));
 
         loop_match_arm_list.push(gen_simple_child_match_arm(type_base_class, gen_context)?);
     } else if schema_type.base_class == "OpenXmlLeafElement" {
@@ -121,9 +119,9 @@ fn gen_schema_type(
               let mut mc_ignorable = None;
             });
 
-            field_ident_list.push(parse_str("xmlns").unwrap());
-            field_ident_list.push(parse_str("xmlns_map").unwrap());
-            field_ident_list.push(parse_str("mc_ignorable").unwrap());
+            field_ident_list.push(format_ident!("xmlns"));
+            field_ident_list.push(format_ident!("xmlns_map"));
+            field_ident_list.push(format_ident!("mc_ignorable"));
         }
 
         for attr in &schema_type.attributes {
@@ -654,20 +652,20 @@ fn gen_simple_child_match_arm(
     let enum_type: Type = parse_str(&format!("crate::common::simple_type::{simple_type_str}"))
         .map_err(BuildError::from)?;
 
-    return Ok(parse2(match simple_type_str {
+    return Ok(match simple_type_str {
         "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
-        | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
+        | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
           quick_xml::events::Event::Text(t) => {
             xml_content = Some(t.decode().map_err(crate::common::SdkError::from)?.to_string());
           }
         },
-        "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
+        "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => parse_quote! {
           quick_xml::events::Event::Text(t) => {
             xml_content = Some(crate::common::parse_bool_bytes(&t.into_inner())?);
           }
         },
         "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
-        | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => quote! {
+        | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => parse_quote! {
           quick_xml::events::Event::Text(t) => {
             xml_content = Some(
               t.decode().map_err(crate::common::SdkError::from)?.parse::<#enum_type>().map_err(crate::common::SdkError::from)?
@@ -675,8 +673,7 @@ fn gen_simple_child_match_arm(
           }
         },
         _ => unreachable!("{simple_type_str}"),
-    })
-    .map_err(BuildError::from)?);
+    });
 }
 
 fn gen_field_match_arm(
@@ -689,12 +686,12 @@ fn gen_field_match_arm(
     let attr_name_literal: LitByteStr =
         parse_str(&format!("b\"{attr_name_str}\"")).map_err(BuildError::from)?;
 
-    Ok(parse2(if schema.r#type.starts_with("ListValue<") {
-        quote! {
+    if schema.r#type.starts_with("ListValue<") {
+        return Ok(parse_quote! {
             #attr_name_literal => {
                 #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
             }
-        }
+        });
     } else if schema.r#type.starts_with("EnumValue<") {
         let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
         let enum_name_formatted = enum_name.to_upper_camel_case();
@@ -719,7 +716,9 @@ fn gen_field_match_arm(
 
         let enum_namespace = gen_context.prefix_namespace_map.try_get(enum_prefix)?;
 
-        let enum_schema = gen_context.prefix_schema_map.try_get( enum_namespace.prefix.as_str())?;
+        let enum_schema = gen_context
+            .prefix_schema_map
+            .try_get(enum_namespace.prefix.as_str())?;
 
         let enum_type: Type = parse_str(&format!(
             "crate::schemas::{}::{enum_name_formatted}",
@@ -727,41 +726,45 @@ fn gen_field_match_arm(
         ))
         .map_err(BuildError::from)?;
 
-        quote! {
+        return Ok(parse_quote! {
           #attr_name_literal => {
             #attr_name_ident = Some(#enum_type::from_bytes(&attr.value)?);
           }
-        }
+        });
     } else {
         match schema.r#type.as_str() {
-          "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
-          | "IntegerValue" | "SByteValue" | "StringValue" => quote! {
-            #attr_name_literal => {
-              #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
+            "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
+            | "IntegerValue" | "SByteValue" | "StringValue" => {
+                return Ok(parse_quote! {
+                  #attr_name_literal => {
+                    #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
+                  }
+                });
             }
-          },
-          "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => quote! {
-            #attr_name_literal => {
-              #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
+            "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => {
+                return Ok(parse_quote! {
+                  #attr_name_literal => {
+                    #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
+                  }
+                });
             }
-          },
-          "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value" | "UInt32Value"
-          | "UInt64Value" | "DoubleValue" | "SingleValue" => {
-            let enum_type: Type =
-              parse_str(&format!("crate::common::simple_type::{}", &schema.r#type)).map_err(BuildError::from)?;
+            "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
+            | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => {
+                let enum_type: Type =
+                    parse_str(&format!("crate::common::simple_type::{}", &schema.r#type))
+                        .map_err(BuildError::from)?;
 
-            quote! {
-              #attr_name_literal => {
-                #attr_name_ident = Some(
-                  attr
-                    .decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?
-                    .parse::<#enum_type>().map_err(crate::common::SdkError::from)?,
-                );
-              }
+                return Ok(parse_quote! {
+                  #attr_name_literal => {
+                    #attr_name_ident = Some(
+                      attr
+                        .decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?
+                        .parse::<#enum_type>().map_err(crate::common::SdkError::from)?,
+                    );
+                  }
+                });
             }
-          }
-          _ => panic!("{}", schema.r#type),
+            _ => panic!("{}", schema.r#type),
         }
-    })
-    .map_err(BuildError::from)?)
+    }
 }

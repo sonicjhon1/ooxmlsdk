@@ -1,9 +1,9 @@
 #![feature(trim_prefix_suffix)]
 
-use quote::{ToTokens, quote};
+use quote::{ToTokens, format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{fs, path::Path};
-use syn::{Ident, ItemMod, parse_quote, parse_str};
+use syn::{Ident, ItemMod, parse_quote};
 
 use crate::{
     error::*,
@@ -305,7 +305,7 @@ pub(crate) fn generate_pub_item_mod(
     )
     .map_err(BuildError::from)?;
 
-    let mod_ident: Ident = parse_str(module_name).map_err(BuildError::from)?;
+    let mod_ident: Ident = format_ident!("{module_name}");
     let mod_item: ItemMod = parse_quote! {
         pub mod #mod_ident;
     };

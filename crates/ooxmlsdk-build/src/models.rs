@@ -3,10 +3,11 @@ use crate::{
     utils::{escape_snake_case, escape_upper_camel_case},
 };
 use heck::ToUpperCamelCase;
+use quote::format_ident;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use syn::{Ident, parse_str};
+use syn::Ident;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
@@ -156,7 +157,7 @@ impl OpenXmlSchemaTypeAttribute {
             &self.property_name
         };
 
-        return parse_str(&escape_snake_case(attr_value_ident_raw)).unwrap();
+        return format_ident!("{}", escape_snake_case(attr_value_ident_raw));
     }
 
     #[inline(always)]
@@ -222,7 +223,7 @@ impl OpenXmlSchemaTypeChild {
 
     #[inline(always)]
     pub fn as_last_name_ident(&self) -> Ident {
-        return parse_str(&self.split_name().1.to_upper_camel_case()).unwrap();
+        return format_ident!("{}", self.split_name().1.to_upper_camel_case());
     }
 
     #[inline(always)]
@@ -236,7 +237,7 @@ impl OpenXmlSchemaTypeChild {
 
     #[inline(always)]
     pub fn as_property_name_ident(&self) -> Ident {
-        return parse_str(&escape_snake_case(self.as_property_name_str())).unwrap();
+        return format_ident!("{}", escape_snake_case(self.as_property_name_str()));
     }
 }
 
@@ -332,7 +333,7 @@ impl OpenXmlSchemaEnumFacet {
 
     #[inline(always)]
     pub fn as_variant_ident(&self) -> Ident {
-        return parse_str(&escape_upper_camel_case(self.as_variant())).unwrap();
+        return format_ident!("{}", escape_upper_camel_case(self.as_variant()));
     }
 }
 

@@ -1,6 +1,6 @@
 use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::report;
 use std::collections::HashMap;
@@ -63,13 +63,13 @@ fn gen_schema_type(
     let (_, type_prefixed_name) = schema_type.split_name();
     let (_, type_name) = schema_type.split_last_name();
 
-    let attributes_ident = parse_quote!(attributes);
+    let attributes_ident = format_ident!("attributes");
     let mut xml_tag_attributes_inner: Vec<TokenStream> = vec![];
     for attribute in &schema_type.attributes {
         xml_tag_attributes_inner.push(gen_attr(attribute, &attributes_ident));
     }
 
-    let xml_inner_ident = parse_quote!(xml);
+    let xml_inner_ident = format_ident!("xml");
     let xml_inner_writer = gen_inner_writer(
         schema,
         schema_type,

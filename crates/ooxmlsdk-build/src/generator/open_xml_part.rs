@@ -1,10 +1,10 @@
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use rootcause::prelude::ResultExt;
 use syn::{
     Arm, FieldValue, Ident, ImplItemConst, ItemFn, ItemImpl, ItemStruct, Stmt, Type, parse_quote,
-    parse_str, parse2,
+    parse_str,
 };
 
 use crate::{
@@ -26,7 +26,7 @@ pub fn gen_open_xml_parts(
     };
 
     let part_name_raw = part.name.as_str();
-    let part_struct_name_ident: Ident = parse_str(&part_name_raw.to_upper_camel_case()).unwrap();
+    let part_struct_name_ident = format_ident!("{}", part_name_raw.to_upper_camel_case());
     let part_struct = gen_struct_fn(part, gen_context, &part_struct_name_ident)?;
 
     let path_str = if part.paths.general.is_empty() {
@@ -41,8 +41,7 @@ pub fn gen_open_xml_parts(
     let mut children_stmt: Option<Stmt> = None;
     let mut children_arm_list: Vec<Arm> = vec![];
 
-    let part_rels_path_ident: Ident =
-        parse_str(&format!("{}_rels_path", part_name_raw.to_snake_case())).unwrap();
+    let part_rels_path_ident = format_ident!("{}_rels_path", part_name_raw.to_snake_case());
 
     if part.base == "OpenXmlPackage" {
         field_declaration_list.push(parse_quote! {
@@ -214,11 +213,11 @@ pub fn gen_open_xml_parts(
         }
 
         let child_api_name_str = child.api_name.to_snake_case();
-        let child_api_name_ident: Ident = parse_str(&child_api_name_str).unwrap();
+        let child_api_name_ident = format_ident!("{child_api_name_str}");
 
         let child_name_struct_str = child.name.to_upper_camel_case();
         let child_name_str = child.name.to_snake_case();
-        let child_name_ident: Ident = parse_str(&child_name_str).unwrap();
+        let child_name_ident = format_ident!("{child_name_str}");
 
         let child_type: Type = parse_str(&format!(
             "crate::parts::{child_name_str}::{child_name_struct_str}",
@@ -489,7 +488,7 @@ fn gen_struct_fn(
             continue;
         }
 
-        let child_name_ident: Ident = parse_str(&child.api_name.to_snake_case()).unwrap();
+        let child_name_ident = format_ident!("{}", child.api_name.to_snake_case());
 
         let child_type: Type = parse_str(&format!(
             "crate::parts::{}::{}",
@@ -527,9 +526,7 @@ fn gen_save_zip_fn(
     let part_paths_general = &part.paths.general;
 
     let part_name_raw = part.name.as_str();
-    let part_name_dir_path_ident: Ident =
-        parse_str(&format!("{part_name_raw}_dir_path").to_snake_case())
-            .context_transform(BuildError::from)?;
+    let part_name_dir_path_ident = format_ident!("{}_dir_path", part_name_raw.to_snake_case());
 
     let mut writer_list: Vec<TokenStream> = vec![];
 
@@ -639,8 +636,7 @@ fn gen_save_zip_fn(
             continue;
         }
 
-        let child_api_name_ident: Ident =
-            parse_str(&child.api_name.to_snake_case()).context_transform(BuildError::from)?;
+        let child_api_name_ident = format_ident!("{}", child.api_name.to_snake_case());
 
         let tokens = match child.as_occurrence() {
             Occurrence::Required => quote! {
@@ -663,7 +659,7 @@ fn gen_save_zip_fn(
             }
         };
 
-        children_writer_stmt_list.push(parse2(tokens).map_err(BuildError::from)?);
+        children_writer_stmt_list.push(parse_quote!(#tokens));
     }
 
     return Ok(parse_quote! {
