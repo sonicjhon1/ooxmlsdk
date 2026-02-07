@@ -334,19 +334,10 @@ fn gen_children_variant_idents(
             let child_namespace = gen_context
                 .type_name_namespace_map
                 .try_get(child.name.as_str())?;
-            let child_schema_name = child_type.class_name.to_upper_camel_case();
-
-            let child_variant_type_raw = if child_namespace.prefix == schema_namespace.prefix {
-                child_schema_name
-            } else {
-                format!(
-                    "crate::schemas::{}::{child_schema_name}",
-                    &child_type.module_name
-                )
-            };
-            let child_variant_type: Type = parse_str(&child_variant_type_raw).unwrap();
 
             let child_variant_name_ident = child.as_last_name_ident();
+            let child_variant_type =
+                child_type.r#type(child_namespace.prefix == schema_namespace.prefix);
 
             return Ok((child_variant_name_ident, child_variant_type));
         })
@@ -461,16 +452,8 @@ fn gen_xml_content_type(
     let enum_namespace = gen_context
         .enum_type_namespace_map
         .try_get(schema_enum.r#type.as_str())?;
-    if enum_namespace.prefix == schema_namespace.prefix {
-        return Ok(parse_str(&schema_enum.name.to_upper_camel_case()).map_err(BuildError::from)?);
-    }
 
-    return Ok(parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &schema_enum.module_name,
-        schema_enum.name.to_upper_camel_case()
-    ))
-    .map_err(BuildError::from)?);
+    return Ok(schema_enum.r#type(enum_namespace.prefix == schema_namespace.prefix));
 }
 
 fn gen_one_sequence_fields(
@@ -490,19 +473,10 @@ fn gen_one_sequence_fields(
         let child_namespace = gen_context
             .type_name_namespace_map
             .try_get(child.name.as_str())?;
-        let child_schema_name = child_type.class_name.to_upper_camel_case();
-
-        let child_variant_type_raw = if child_namespace.prefix == schema_namespace.prefix {
-            child_schema_name
-        } else {
-            format!(
-                "crate::schemas::{}::{child_schema_name}",
-                &child_type.module_name
-            )
-        };
-        let child_variant_type: Type = parse_str(&child_variant_type_raw).unwrap();
 
         let child_property_name_ident = child.as_property_name_ident();
+        let child_variant_type =
+            child_type.r#type(child_namespace.prefix == schema_namespace.prefix);
 
         let property_comments = if child.property_comments.is_empty() {
             " _"

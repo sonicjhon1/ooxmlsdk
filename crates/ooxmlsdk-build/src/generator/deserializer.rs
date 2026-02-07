@@ -51,13 +51,7 @@ fn gen_schema_type(
         .uri_namespace_map
         .try_get(schema.target_namespace.as_str())?;
 
-    let schema_class_name_formatted = schema_type.class_name.to_upper_camel_case();
-
-    let struct_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{schema_class_name_formatted}",
-        &schema.module_name
-    ))
-    .unwrap();
+    let struct_type: Type = schema.struct_type(schema_type);
 
     let (type_base_class, type_prefixed_name) = schema_type.split_name();
     let (_, type_name_str) = schema_type.split_last_name();
@@ -128,12 +122,6 @@ fn gen_schema_type(
             attributes.push(attr);
         }
 
-        let child_choice_enum_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{schema_class_name_formatted}ChildChoice",
-            &schema.module_name,
-        ))
-        .unwrap();
-
         if schema_type.is_one_sequence_flatten() {
             for schema_type_particle in &schema_type.particle.items {
                 let child = child_map.try_get(schema_type_particle.name.as_str())?;
@@ -183,6 +171,8 @@ fn gen_schema_type(
                   children
                 });
             }
+
+            let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
 
             for child in &schema_type.children {
                 loop_children_match_list.push(gen_child_match_arm(
@@ -258,12 +248,6 @@ fn gen_schema_type(
             });
         }
 
-        let child_choice_enum_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{schema_class_name_formatted}ChildChoice",
-            &schema.module_name,
-        ))
-        .map_err(BuildError::from)?;
-
         if schema_type.is_one_sequence_flatten()
             && base_class_type.composite_type == Some(CompositeType::OneSequence)
         {
@@ -278,6 +262,8 @@ fn gen_schema_type(
                 )?);
             }
         } else {
+            let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
+
             for child in &schema_type.children {
                 loop_children_match_list.push(gen_child_match_arm(
                     child,
@@ -376,26 +362,30 @@ fn gen_schema_type(
     };
 
     if !loop_children_match_list.is_empty() {
-        loop_declaration_list.push(parse_quote! {
-          let mut e_opt = None;
-        });
+        loop_declaration_list.extend([
+            parse_quote! {
+              let mut e_opt = None;
+            },
+            parse_quote! {
+              let mut e_empty = false;
+            },
+        ]);
 
-        loop_declaration_list.push(parse_quote! {
-          let mut e_empty = false;
-        });
+        loop_match_arm_list.extend([
+            parse_quote! {
+              quick_xml::events::Event::Start(e) => {
+                e_opt = Some(e);
+              }
+            },
+            parse_quote! {
+              quick_xml::events::Event::Empty(e) => {
+                e_empty = true;
+                e_opt = Some(e);
+              }
+            },
+        ]);
 
-        loop_match_arm_list.push(parse_quote! {
-          quick_xml::events::Event::Start(e) => {
-            e_opt = Some(e);
-          }
-        });
-
-        loop_match_arm_list.push(parse_quote! {
-          quick_xml::events::Event::Empty(e) => {
-            e_empty = true;
-            e_opt = Some(e);
-          }
-        });
+        let schema_type_class_name = schema_type.class_name_ident().to_string();
 
         //TODO: Strip out the namespace prefix first
         loop_children_stmt_opt = Some(parse_quote! {
@@ -406,7 +396,7 @@ fn gen_schema_type(
                 tracing::warn!(
                   "Skipping non-matching tag: ({}) from schema: ({})",
                   String::from_utf8_lossy(e.name().as_ref()),
-                  #schema_class_name_formatted
+                  #schema_type_class_name
                 );
                 continue;
               },
@@ -466,12 +456,7 @@ fn gen_schema_enum(
     schema: &OpenXmlSchema,
     schema_enum: &OpenXmlSchemaEnum,
 ) -> Result<String, BuildErrorReport> {
-    let enum_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &schema.module_name,
-        schema_enum.name.to_upper_camel_case()
-    ))
-    .map_err(BuildError::from)?;
+    let enum_type = schema.enum_type(schema_enum);
 
     let mut variants: Vec<Arm> = Vec::with_capacity(schema_enum.facets.len());
     let mut byte_variants: Vec<Arm> = Vec::with_capacity(schema_enum.facets.len());
@@ -537,12 +522,7 @@ fn gen_one_sequence_match_arm(
     let child_name_literal: LitByteStr =
         parse_str(&format!("b\"{child_name}\"")).map_err(BuildError::from)?;
 
-    let child_variant_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &child_type.module_name,
-        child_type.class_name.to_upper_camel_case()
-    ))
-    .map_err(BuildError::from)?;
+    let child_variant_type = child_type.r#type(false);
 
     // TODO: Simplify again
     if loop_children_suffix_match_set.insert(child_name.to_string()) {
@@ -600,14 +580,8 @@ fn gen_child_match_arm(
     let child_name_literal: LitByteStr =
         parse_str(&format!("b\"{child_name}\"")).map_err(BuildError::from)?;
 
+    let child_variant_type = child_type.r#type(false);
     let child_variant_name_ident = child.as_last_name_ident();
-
-    let child_variant_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &child_type.module_name,
-        child_type.class_name.to_upper_camel_case()
-    ))
-    .map_err(BuildError::from)?;
 
     if loop_children_suffix_match_set.insert(child_name.to_string()) {
         return Ok(parse_quote! {
@@ -633,12 +607,7 @@ fn gen_simple_child_match_arm(
     gen_context: &GenContext,
 ) -> Result<Arm, BuildErrorReport> {
     if let Some(schema_enum) = gen_context.enum_type_enum_map.get(first_name) {
-        let simple_type_name: Type = parse_str(&format!(
-            "crate::schemas::{}::{}",
-            &schema_enum.module_name,
-            schema_enum.name.to_upper_camel_case()
-        ))
-        .map_err(BuildError::from)?;
+        let simple_type_name = schema_enum.r#type(false);
 
         return Ok(parse_quote! {
           quick_xml::events::Event::Text(t) => {

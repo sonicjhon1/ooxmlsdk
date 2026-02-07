@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::option_ext::OptionExt;
 use std::collections::HashMap;
-use syn::{Arm, Stmt, Type, parse_quote, parse_str};
+use syn::{Arm, Stmt, Type, parse_quote};
 
 use crate::{GenContext, error::*, models::*, utils::HashMapOpsError};
 
@@ -34,12 +34,7 @@ fn gen_schema_type(
         return Ok(String::with_capacity(0));
     }
 
-    let struct_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &schema.module_name,
-        schema_type.class_name.to_upper_camel_case()
-    ))
-    .unwrap();
+    let struct_type = schema.struct_type(schema_type);
 
     let (type_base_class, _) = schema_type.split_name();
 
@@ -99,12 +94,7 @@ fn gen_schema_type(
                 }
             }
         } else {
-            let child_choice_enum_type: Type = parse_str(&format!(
-                "crate::schemas::{}::{}ChildChoice",
-                &schema.module_name,
-                schema_type.class_name.to_upper_camel_case()
-            ))
-            .map_err(BuildError::from)?;
+            let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
 
             let mut child_match_arm_list: Vec<Arm> = vec![];
 
@@ -187,12 +177,7 @@ fn gen_schema_type(
                 }
             }
         } else {
-            let child_choice_enum_type: Type = parse_str(&format!(
-                "crate::schemas::{}::{}ChildChoice",
-                &schema.module_name,
-                schema_type.class_name.to_upper_camel_case()
-            ))
-            .unwrap();
+            let child_choice_enum_type: Type = schema.enum_child_choice_type(schema_type);
 
             let mut child_match_arm_list: Vec<Arm> = vec![];
 

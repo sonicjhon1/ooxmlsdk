@@ -1,10 +1,9 @@
-use heck::ToUpperCamelCase;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::report;
 use std::collections::HashMap;
-use syn::{Ident, ImplItemFn, Stmt, Type, parse_quote, parse_str};
+use syn::{Ident, ImplItemFn, Stmt, Type, parse_quote};
 
 use crate::{
     GenContext,
@@ -53,12 +52,7 @@ fn gen_schema_type(
         return Ok(String::with_capacity(0));
     }
 
-    let struct_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &schema.module_name,
-        schema_type.class_name.to_upper_camel_case()
-    ))
-    .unwrap();
+    let struct_type = schema.struct_type(schema_type);
 
     let (_, type_prefixed_name) = schema_type.split_name();
     let (_, type_name) = schema_type.split_last_name();
@@ -175,12 +169,7 @@ fn gen_schema_enum(
     schema: &OpenXmlSchema,
     schema_enum: &OpenXmlSchemaEnum,
 ) -> Result<String, BuildErrorReport> {
-    let enum_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}",
-        &schema.module_name,
-        schema_enum.name.to_upper_camel_case()
-    ))
-    .map_err(BuildError::from)?;
+    let enum_type = schema.enum_type(schema_enum);
 
     let variants = schema_enum.facets.iter().map(|schema_enum_facet| {
         let variant_ident = schema_enum_facet.as_variant_ident();
@@ -300,12 +289,7 @@ fn gen_inner_writer(
 ) -> Result<Option<TokenStream>, BuildErrorReport> {
     let (type_base_class, _) = schema_type.split_name();
 
-    let child_choice_enum_type: Type = parse_str(&format!(
-        "crate::schemas::{}::{}ChildChoice",
-        &schema.module_name,
-        schema_type.class_name.to_upper_camel_case()
-    ))
-    .map_err(BuildError::from)?;
+    let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
 
     match schema_type.base_class.as_str() {
         "OpenXmlLeafElement" => return Ok(None),

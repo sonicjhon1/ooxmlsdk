@@ -7,7 +7,7 @@ use quote::format_ident;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use syn::Ident;
+use syn::{Ident, Type, parse_quote};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
@@ -70,6 +70,31 @@ pub struct OpenXmlSchema {
     pub module_name: String,
 }
 
+impl OpenXmlSchema {
+    pub fn module_name_ident(&self) -> Ident { return format_ident!("{}", self.module_name); }
+
+    pub fn struct_type(&self, schema_type: &OpenXmlSchemaType) -> Type {
+        let module_name = self.module_name_ident();
+        let ident = schema_type.class_name_ident();
+
+        return parse_quote!(crate::schemas::#module_name::#ident);
+    }
+
+    pub fn enum_type(&self, schema_enum: &OpenXmlSchemaEnum) -> Type {
+        let module_name = self.module_name_ident();
+        let ident = schema_enum.name_ident();
+
+        return parse_quote!(crate::schemas::#module_name::#ident);
+    }
+
+    pub fn enum_child_choice_type(&self, schema_type: &OpenXmlSchemaType) -> Type {
+        let module_name = self.module_name_ident();
+        let ident = schema_type.child_choice_class_name_ident();
+
+        return parse_quote!(crate::schemas::#module_name::#ident);
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct OpenXmlSchemaType {
@@ -127,6 +152,32 @@ impl OpenXmlSchemaType {
             .children
             .iter()
             .map(|child| (child.name.as_str(), child));
+    }
+
+    #[inline(always)]
+    pub fn class_name_ident(&self) -> Ident {
+        format_ident!("{}", self.class_name.to_upper_camel_case())
+    }
+
+    #[inline(always)]
+    pub fn child_choice_class_name_ident(&self) -> Ident {
+        format_ident!("{}ChildChoice", self.class_name.to_upper_camel_case())
+    }
+
+    #[inline(always)]
+    pub fn module_name_ident(&self) -> Ident { return format_ident!("{}", self.module_name) }
+
+    #[inline(always)]
+    pub fn r#type(&self, is_same_module: bool) -> Type {
+        let ident = self.class_name_ident();
+
+        if is_same_module {
+            return parse_quote!(#ident);
+        } else {
+            let module_name = self.module_name_ident();
+
+            return parse_quote!(crate::schemas::#module_name::#ident);
+        }
     }
 }
 
@@ -311,6 +362,27 @@ pub struct OpenXmlSchemaEnum {
     pub version: String,
     #[serde(skip)]
     pub module_name: String,
+}
+
+impl OpenXmlSchemaEnum {
+    pub fn module_name_ident(&self) -> Ident { return format_ident!("{}", self.module_name) }
+
+    pub fn name_ident(&self) -> Ident {
+        return format_ident!("{}", self.name.to_upper_camel_case());
+    }
+
+    #[inline(always)]
+    pub fn r#type(&self, is_same_module: bool) -> Type {
+        let ident = self.name_ident();
+
+        if is_same_module {
+            return parse_quote!(#ident);
+        } else {
+            let module_name = self.module_name_ident();
+
+            return parse_quote!(crate::schemas::#module_name::#ident);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

@@ -182,12 +182,7 @@ pub fn gen_open_xml_parts(
                     .type_name_type_map
                     .try_get(root_element_type_name)?;
 
-                let field_type: Type = parse_str(&format!(
-                    "crate::schemas::{}::{}",
-                    root_element_type.module_name,
-                    root_element_type.class_name.to_upper_camel_case()
-                ))
-                .unwrap();
+                let field_type = root_element_type.r#type(false);
 
                 field_declaration_list.push(parse_quote! {
                     let root_element = Some(#field_type::from_reader(
@@ -467,12 +462,7 @@ fn gen_struct_fn(
                     .type_name_type_map
                     .try_get(root_element_type_name)?;
 
-                let field_type: Type = parse_str(&format!(
-                    "crate::schemas::{}::{}",
-                    root_element_type.module_name,
-                    root_element_type.class_name.to_upper_camel_case()
-                ))
-                .unwrap();
+                let field_type = root_element_type.r#type(false);
 
                 quote! {
                     pub root_element: #field_type,
