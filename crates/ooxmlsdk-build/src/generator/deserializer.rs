@@ -1,4 +1,3 @@
-use heck::ToUpperCamelCase;
 use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashSet;
@@ -651,57 +650,30 @@ fn gen_field_match_arm(
 ) -> Result<Arm, BuildErrorReport> {
     let attr_name_ident = schema.as_name_ident();
     let attr_name_str = schema.as_name_str();
-
     let attr_name_literal: LitByteStr =
         parse_str(&format!("b\"{attr_name_str}\"")).map_err(BuildError::from)?;
+    let attr_type = schema.r#type(gen_context)?;
 
-    if schema.r#type.starts_with("ListValue<") {
-        return Ok(parse_quote! {
-            #attr_name_literal => {
-                #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
-            }
-        });
-    } else if schema.r#type.starts_with("EnumValue<") {
-        let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
-        let enum_name_formatted = enum_name.to_upper_camel_case();
-
-        let enum_prefix = gen_context
-            .typed_namespaces
-            .iter()
-            .find_map(|typed_namespace| {
-                if typed_namespace.namespace != enum_typed_namespace_str {
-                    return None;
-                };
-
-                return gen_context
-                    .prefix_schema_map
-                    .get(typed_namespace.prefix.as_str())?
-                    .enums
-                    .iter()
-                    .any(|schema_enum| schema_enum.name == enum_name)
-                    .then_some(typed_namespace.prefix.as_str());
-            })
-            .unwrap();
-
-        let enum_namespace = gen_context.prefix_namespace_map.try_get(enum_prefix)?;
-
-        let enum_schema = gen_context
-            .prefix_schema_map
-            .try_get(enum_namespace.prefix.as_str())?;
-
-        let enum_type: Type = parse_str(&format!(
-            "crate::schemas::{}::{enum_name_formatted}",
-            enum_schema.module_name,
-        ))
-        .map_err(BuildError::from)?;
-
-        return Ok(parse_quote! {
-          #attr_name_literal => {
-            #attr_name_ident = Some(#enum_type::from_bytes(&attr.value)?);
-          }
-        });
-    } else {
-        match schema.r#type.as_str() {
+    match schema.r#type.as_ref().unwrap() {
+        OpenXmlSchemaTypeAttributeType::ListValue { .. } => {
+            return Ok(parse_quote! {
+                #attr_name_literal => {
+                    #attr_name_ident = Some(
+                        attr.decode_and_unescape_value(xml_reader.decoder())
+                            .map_err(crate::common::SdkError::from)?
+                            .into_owned()
+                    );
+                }
+            });
+        }
+        OpenXmlSchemaTypeAttributeType::EnumValue { .. } => {
+            return Ok(parse_quote! {
+              #attr_name_literal => {
+                #attr_name_ident = Some(#attr_type::from_bytes(&attr.value)?);
+              }
+            });
+        }
+        OpenXmlSchemaTypeAttributeType::SimpleType { r#type } => match r#type.as_str() {
             "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
             | "IntegerValue" | "SByteValue" | "StringValue" => {
                 return Ok(parse_quote! {
@@ -719,21 +691,17 @@ fn gen_field_match_arm(
             }
             "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
             | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => {
-                let enum_type: Type =
-                    parse_str(&format!("crate::common::simple_type::{}", &schema.r#type))
-                        .map_err(BuildError::from)?;
-
                 return Ok(parse_quote! {
                   #attr_name_literal => {
                     #attr_name_ident = Some(
                       attr
                         .decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?
-                        .parse::<#enum_type>().map_err(crate::common::SdkError::from)?,
+                        .parse::<#attr_type>().map_err(crate::common::SdkError::from)?,
                     );
                   }
                 });
             }
-            _ => panic!("{}", schema.r#type),
-        }
+            _ => unreachable!("{}", r#type),
+        },
     }
 }

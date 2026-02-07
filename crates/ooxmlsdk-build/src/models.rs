@@ -1,5 +1,6 @@
 use crate::{
-    generator::context::check_office_version,
+    error::BuildErrorReport,
+    generator::context::{GenContext, check_office_version},
     utils::{escape_snake_case, escape_upper_camel_case},
 };
 use heck::ToUpperCamelCase;
@@ -188,12 +189,57 @@ pub enum CompositeType {
     OneSequence,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum OpenXmlSchemaTypeAttributeType {
+    ListValue { r#type: String },
+    EnumValue { namespace: String, r#type: String },
+    SimpleType { r#type: String },
+}
+
+impl TryFrom<String> for OpenXmlSchemaTypeAttributeType {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if let Some(r#type) = value.strip_circumfix("ListValue<", ">") {
+            Ok(Self::ListValue {
+                r#type: r#type.to_owned(),
+            })
+        } else if let Some(namespace_and_type) = value.strip_circumfix("EnumValue<", ">") {
+            let (namespace, r#type) = namespace_and_type
+                .rsplit_once('.')
+                .ok_or_else(|| format!("EnumValue ({value}) doesn't contain '.'"))?;
+
+            Ok(Self::EnumValue {
+                namespace: namespace.to_owned(),
+                r#type: r#type.to_owned(),
+            })
+        } else {
+            Ok(Self::SimpleType {
+                r#type: value.clone(),
+            })
+        }
+    }
+}
+
+impl From<OpenXmlSchemaTypeAttributeType> for String {
+    fn from(value: OpenXmlSchemaTypeAttributeType) -> Self {
+        match value {
+            OpenXmlSchemaTypeAttributeType::ListValue { r#type } => format!("ListValue<{type}>"),
+            OpenXmlSchemaTypeAttributeType::EnumValue { namespace, r#type } => {
+                format!("EnumValue<{namespace}.{type}>")
+            }
+            OpenXmlSchemaTypeAttributeType::SimpleType { r#type } => r#type.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct OpenXmlSchemaTypeAttribute {
     pub q_name: String,
     pub property_name: String,
-    pub r#type: String,
+    pub r#type: Option<OpenXmlSchemaTypeAttributeType>,
     pub property_comments: String,
     pub version: String,
     pub validators: Vec<OpenXmlSchemaTypeAttributeValidator>,
@@ -215,24 +261,48 @@ impl OpenXmlSchemaTypeAttribute {
     pub fn as_name_str(&self) -> &str { return self.q_name.trim_prefix(":"); }
 
     #[inline(always)]
-    pub fn split_type_enum_value_trimmed(&self) -> (&str, &str) {
-        self.r#type
-            .rsplit_once('.')
-            .map(|(f, l)| {
-                (
-                    f.strip_prefix("EnumValue<").unwrap(),
-                    l.strip_suffix('>').unwrap(),
-                )
-            })
-            .unwrap()
-    }
-
-    #[inline(always)]
     pub fn is_validator_required(&self) -> bool {
         return self
             .validators
             .iter()
             .any(|validator| validator.name == "RequiredValidator");
+    }
+
+    pub fn r#type(&self, gen_context: &GenContext) -> Result<Type, BuildErrorReport> {
+        match self.r#type.as_ref() {
+            Some(OpenXmlSchemaTypeAttributeType::ListValue { .. }) => {
+                return Ok(parse_quote!(String));
+            }
+            Some(OpenXmlSchemaTypeAttributeType::EnumValue { namespace, r#type }) => {
+                let (enum_schema, enum_schema_enum) = gen_context
+                    .typed_namespaces
+                    .iter()
+                    .find_map(|typed_namespace| {
+                        if typed_namespace.namespace != *namespace {
+                            return None;
+                        };
+
+                        let schema = gen_context
+                            .prefix_schema_map
+                            .get(typed_namespace.prefix.as_str())?;
+
+                        return schema
+                            .enums
+                            .iter()
+                            .find(|schema_enum| schema_enum.name == *r#type)
+                            .map(|schema_enum| (schema, schema_enum));
+                    })
+                    .unwrap();
+
+                return Ok(enum_schema.enum_type(enum_schema_enum));
+            }
+            Some(OpenXmlSchemaTypeAttributeType::SimpleType { r#type }) => {
+                let ident = format_ident!("{type}");
+
+                return Ok(parse_quote!(crate::common::simple_type::#ident));
+            }
+            None => unreachable!(),
+        }
     }
 }
 

@@ -57,7 +57,7 @@ fn gen_schema_type(
 
     if schema_type.base_class == "OpenXmlLeafTextElement" {
         for attr in &schema_type.attributes {
-            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+            fields.push(gen_attr(attr, gen_context)?);
         }
 
         let simple_type_name = gen_xml_content_type(schema_type, schema_namespace, gen_context)?;
@@ -67,7 +67,7 @@ fn gen_schema_type(
         });
     } else if schema_type.base_class == "OpenXmlLeafElement" {
         for attr in &schema_type.attributes {
-            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+            fields.push(gen_attr(attr, gen_context)?);
         }
     } else if schema_type.base_class == "OpenXmlCompositeElement"
         || schema_type.base_class == "CustomXmlElement"
@@ -93,7 +93,7 @@ fn gen_schema_type(
         }
 
         for attr in &schema_type.attributes {
-            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+            fields.push(gen_attr(attr, gen_context)?);
         }
 
         if schema_type.is_one_sequence_flatten() {
@@ -124,11 +124,11 @@ fn gen_schema_type(
             .try_get(format!("{type_base_class}/").as_str())?;
 
         for attr in &schema_type.attributes {
-            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+            fields.push(gen_attr(attr, gen_context)?);
         }
 
         for attr in &base_class_type.attributes {
-            fields.push(gen_attr(attr, schema_namespace, gen_context)?);
+            fields.push(gen_attr(attr, gen_context)?);
         }
 
         if schema_type.is_one_sequence_flatten()
@@ -237,76 +237,32 @@ fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> String {
 }
 
 fn gen_attr(
-    schema: &OpenXmlSchemaTypeAttribute,
-    schema_namespace: &OpenXmlNamespace,
+    attr_schema: &OpenXmlSchemaTypeAttribute,
     gen_context: &GenContext,
 ) -> Result<TokenStream, BuildErrorReport> {
-    let attr_name_ident = schema.as_name_ident();
+    let attr_name_ident = attr_schema.as_name_ident();
+    let attr_type = attr_schema.r#type(gen_context)?;
+    let property_comments_doc = &attr_schema.property_comments;
 
-    let type_ident_raw = if schema.r#type.starts_with("ListValue<") {
-        "String".to_string()
-    } else if schema.r#type.starts_with("EnumValue<") {
-        let (enum_typed_namespace_str, enum_name) = schema.split_type_enum_value_trimmed();
-        let enum_name_formatted = enum_name.to_upper_camel_case();
-
-        let enum_prefix = gen_context
-            .typed_namespaces
-            .iter()
-            .find_map(|typed_namespace| {
-                if typed_namespace.namespace != enum_typed_namespace_str {
-                    return None;
-                };
-
-                return gen_context
-                    .prefix_schema_map
-                    .get(typed_namespace.prefix.as_str())?
-                    .enums
-                    .iter()
-                    .any(|schema_enum| schema_enum.name == enum_name)
-                    .then_some(typed_namespace.prefix.as_str());
-            })
-            .unwrap();
-
-        let enum_namespace = gen_context.prefix_namespace_map.try_get(enum_prefix)?;
-
-        if enum_namespace.prefix == schema_namespace.prefix {
-            enum_name_formatted
-        } else {
-            let enum_schema = gen_context
-                .prefix_schema_map
-                .try_get(enum_namespace.prefix.as_str())?;
-
-            format!(
-                "crate::schemas::{}::{enum_name_formatted}",
-                enum_schema.module_name
-            )
-        }
-    } else {
-        format!("crate::common::simple_type::{}", &schema.r#type)
-    };
-    let type_ident: Type = parse_str(&type_ident_raw).unwrap();
-
-    let property_comments_doc = &schema.property_comments;
-
-    let version_doc = if schema.version.is_empty() {
+    let version_doc = if attr_schema.version.is_empty() {
         " Available in Office2007 and above.".to_string()
     } else {
-        format!(" Available in {} and above.", schema.version)
+        format!(" Available in {} and above.", attr_schema.version)
     };
 
     let qualified_doc = format!(
         " Represents the following attribute in the schema: ({})",
-        schema.as_name_str()
+        attr_schema.as_name_str()
     );
 
-    Ok(if schema.is_validator_required() {
+    Ok(if attr_schema.is_validator_required() {
         quote! {
             #[doc = #property_comments_doc]
             #[doc = ""]
             #[doc = #version_doc]
             #[doc = ""]
             #[doc = #qualified_doc]
-            pub #attr_name_ident: #type_ident,
+            pub #attr_name_ident: #attr_type,
         }
     } else {
         quote! {
@@ -315,7 +271,7 @@ fn gen_attr(
             #[doc = #version_doc]
             #[doc = ""]
             #[doc = #qualified_doc]
-            pub #attr_name_ident: Option<#type_ident>,
+            pub #attr_name_ident: Option<#attr_type>,
         }
     })
 }

@@ -1,4 +1,5 @@
 #![feature(trim_prefix_suffix)]
+#![feature(strip_circumfix)]
 
 use quote::{ToTokens, format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};

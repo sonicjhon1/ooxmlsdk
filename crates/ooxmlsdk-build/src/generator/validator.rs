@@ -237,214 +237,218 @@ fn gen_attr_validator_stmt_list(schema: &OpenXmlSchemaTypeAttribute) -> Vec<Stmt
     let mut validator_count: usize = 0;
 
     for validator in &schema.validators {
-        if schema.r#type.starts_with("ListValue<") || schema.r#type.starts_with("EnumValue<") {
-            continue;
-        }
+        match schema.r#type.as_ref().unwrap() {
+            OpenXmlSchemaTypeAttributeType::ListValue { .. }
+            | OpenXmlSchemaTypeAttributeType::EnumValue { .. } => continue,
+            OpenXmlSchemaTypeAttributeType::SimpleType { r#type } => {
+                match validator.name.as_str() {
+                    "StringValidator" => {
+                        let mut add_validator = false;
 
-        match validator.name.as_str() {
-            "StringValidator" => {
-                let mut add_validator = false;
+                        for argument in &validator.arguments {
+                            match argument.name.as_str() {
+                                "MinLength" => {
+                                    add_validator = true;
 
-                for argument in &validator.arguments {
-                    match argument.name.as_str() {
-                        "MinLength" => {
-                            add_validator = true;
+                                    let value: usize = argument.value.parse().unwrap();
 
-                            let value: usize = argument.value.parse().unwrap();
-
-                            if value == 0 {
-                                continue;
-                            } else if value == 1 {
-                                if required {
-                                    attr_validator_stmt_list.push(parse_quote! {
-                                      if self.#attr_name_ident.is_empty() {
-                                        validator_results[#validator_count] = false;
-                                      }
-                                    });
-                                } else {
-                                    attr_validator_stmt_list.push(parse_quote! {
-                                      if #attr_name_ident.is_empty() {
-                                        validator_results[#validator_count] = false;
-                                      }
-                                    });
-                                }
-                            } else if required {
-                                attr_validator_stmt_list.push(parse_quote! {
-                                  if self.#attr_name_ident.len() < #value {
-                                    validator_results[#validator_count] = false;
-                                  }
-                                });
-                            } else {
-                                attr_validator_stmt_list.push(parse_quote! {
-                                  if #attr_name_ident.len() < #value {
-                                    validator_results[#validator_count] = false;
-                                  }
-                                });
-                            }
-                        }
-                        "MaxLength" => {
-                            add_validator = true;
-
-                            let value: usize = argument.value.parse().unwrap();
-
-                            if required {
-                                attr_validator_stmt_list.push(parse_quote! {
-                                  if self.#attr_name_ident.len() > #value {
-                                    validator_results[#validator_count] = false;
-                                  }
-                                });
-                            } else {
-                                attr_validator_stmt_list.push(parse_quote! {
-                                  if #attr_name_ident.len() > #value {
-                                    validator_results[#validator_count] = false;
-                                  }
-                                });
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-
-                if add_validator {
-                    attr_validator_stmt_list.push(parse_quote! {
-                      validator_results[#validator_count] = true;
-                    });
-
-                    validator_count += 1;
-                }
-            }
-            "NumberValidator" => {
-                let mut add_validator = false;
-
-                for argument in &validator.arguments {
-                    match argument.name.as_str() {
-                        "MinInclusive" => {
-                            add_validator = true;
-
-                            let value: i64 = argument.value.parse().unwrap();
-
-                            match schema.r#type.as_str() {
-                                "Int64Value" => {
-                                    if required {
+                                    if value == 0 {
+                                        continue;
+                                    } else if value == 1 {
+                                        if required {
+                                            attr_validator_stmt_list.push(parse_quote! {
+                                              if self.#attr_name_ident.is_empty() {
+                                                validator_results[#validator_count] = false;
+                                              }
+                                            });
+                                        } else {
+                                            attr_validator_stmt_list.push(parse_quote! {
+                                              if #attr_name_ident.is_empty() {
+                                                validator_results[#validator_count] = false;
+                                              }
+                                            });
+                                        }
+                                    } else if required {
                                         attr_validator_stmt_list.push(parse_quote! {
-                                          if self.#attr_name_ident < #value {
+                                          if self.#attr_name_ident.len() < #value {
                                             validator_results[#validator_count] = false;
                                           }
                                         });
                                     } else {
                                         attr_validator_stmt_list.push(parse_quote! {
-                                          if *#attr_name_ident < #value {
+                                          if #attr_name_ident.len() < #value {
                                             validator_results[#validator_count] = false;
                                           }
                                         });
                                     }
                                 }
-                                "StringValue" | "IntegerValue" | "SByteValue" | "DecimalValue" => {
+                                "MaxLength" => {
+                                    add_validator = true;
+
+                                    let value: usize = argument.value.parse().unwrap();
+
                                     if required {
-                                        attr_validator_stmt_list.push(
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if self.#attr_name_ident.len() > #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
+                                    } else {
+                                        attr_validator_stmt_list.push(parse_quote! {
+                                          if #attr_name_ident.len() > #value {
+                                            validator_results[#validator_count] = false;
+                                          }
+                                        });
+                                    }
+                                }
+                                _ => (),
+                            }
+                        }
+
+                        if add_validator {
+                            attr_validator_stmt_list.push(parse_quote! {
+                              validator_results[#validator_count] = true;
+                            });
+
+                            validator_count += 1;
+                        }
+                    }
+                    "NumberValidator" => {
+                        let mut add_validator = false;
+
+                        for argument in &validator.arguments {
+                            match argument.name.as_str() {
+                                "MinInclusive" => {
+                                    add_validator = true;
+
+                                    let value: i64 = argument.value.parse().unwrap();
+
+                                    match r#type.as_str() {
+                                        "Int64Value" => {
+                                            if required {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if self.#attr_name_ident < #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            } else {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if *#attr_name_ident < #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            }
+                                        }
+                                        "StringValue" | "IntegerValue" | "SByteValue"
+                                        | "DecimalValue" => {
+                                            if required {
+                                                attr_validator_stmt_list.push(
                                             parse_quote! {
                                               if self.#attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? < #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             },
                                         );
-                                    } else {
-                                        attr_validator_stmt_list.push(
+                                            } else {
+                                                attr_validator_stmt_list.push(
                                             parse_quote! {
                                               if #attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? < #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             },
                                         );
+                                            }
+                                        }
+                                        _ => {
+                                            if required {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if (self.#attr_name_ident as i64) < #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            } else {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if (*#attr_name_ident as i64) < #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            }
+                                        }
                                     }
                                 }
-                                _ => {
-                                    if required {
-                                        attr_validator_stmt_list.push(parse_quote! {
-                                          if (self.#attr_name_ident as i64) < #value {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        });
-                                    } else {
-                                        attr_validator_stmt_list.push(parse_quote! {
-                                          if (*#attr_name_ident as i64) < #value {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                        "MaxInclusive" => {
-                            add_validator = true;
+                                "MaxInclusive" => {
+                                    add_validator = true;
 
-                            let value: i64 = argument.value.parse().unwrap();
+                                    let value: i64 = argument.value.parse().unwrap();
 
-                            match schema.r#type.as_str() {
-                                "Int64Value" => {
-                                    if required {
-                                        attr_validator_stmt_list.push(parse_quote! {
-                                          if self.#attr_name_ident > #value {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        });
-                                    } else {
-                                        attr_validator_stmt_list.push(parse_quote! {
-                                          if *#attr_name_ident > #value {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        });
-                                    }
-                                }
-                                "StringValue" | "IntegerValue" | "SByteValue" | "DecimalValue" => {
-                                    if required {
-                                        attr_validator_stmt_list.push(
+                                    match r#type.as_str() {
+                                        "Int64Value" => {
+                                            if required {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if self.#attr_name_ident > #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            } else {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if *#attr_name_ident > #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            }
+                                        }
+                                        "StringValue" | "IntegerValue" | "SByteValue"
+                                        | "DecimalValue" => {
+                                            if required {
+                                                attr_validator_stmt_list.push(
                                             parse_quote! {
                                               if self.#attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? > #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             },
                                         );
-                                    } else {
-                                        attr_validator_stmt_list.push(
+                                            } else {
+                                                attr_validator_stmt_list.push(
                                             parse_quote! {
                                               if #attr_name_ident.parse::<i64>().map_err(crate::common::SdkError::from)? > #value {
                                                 validator_results[#validator_count] = false;
                                               }
                                             },
                                         );
+                                            }
+                                        }
+                                        _ => {
+                                            if required {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if (self.#attr_name_ident as i64) > #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            } else {
+                                                attr_validator_stmt_list.push(parse_quote! {
+                                                  if (*#attr_name_ident as i64) > #value {
+                                                    validator_results[#validator_count] = false;
+                                                  }
+                                                });
+                                            }
+                                        }
                                     }
                                 }
-                                _ => {
-                                    if required {
-                                        attr_validator_stmt_list.push(parse_quote! {
-                                          if (self.#attr_name_ident as i64) > #value {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        });
-                                    } else {
-                                        attr_validator_stmt_list.push(parse_quote! {
-                                          if (*#attr_name_ident as i64) > #value {
-                                            validator_results[#validator_count] = false;
-                                          }
-                                        });
-                                    }
-                                }
+                                _ => (),
                             }
                         }
-                        _ => (),
+
+                        if add_validator {
+                            attr_validator_stmt_list.push(parse_quote! {
+                              validator_results[#validator_count] = true;
+                            });
+
+                            validator_count += 1;
+                        }
                     }
-                }
-
-                if add_validator {
-                    attr_validator_stmt_list.push(parse_quote! {
-                      validator_results[#validator_count] = true;
-                    });
-
-                    validator_count += 1;
+                    _ => (),
                 }
             }
-            _ => (),
         }
     }
 
