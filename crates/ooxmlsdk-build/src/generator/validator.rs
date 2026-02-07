@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rootcause::option_ext::OptionExt;
 use std::collections::HashMap;
-use syn::{Arm, Stmt, Type, parse_quote};
+use syn::{Arm, Stmt, parse_quote};
 
 use crate::{GenContext, error::*, models::*, utils::HashMapOpsError};
 
@@ -177,7 +177,7 @@ fn gen_schema_type(
                 }
             }
         } else {
-            let child_choice_enum_type: Type = schema.enum_child_choice_type(schema_type);
+            let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
 
             let mut child_match_arm_list: Vec<Arm> = vec![];
 

@@ -50,7 +50,7 @@ fn gen_schema_type(
         .uri_namespace_map
         .try_get(schema.target_namespace.as_str())?;
 
-    let struct_type: Type = schema.struct_type(schema_type);
+    let struct_type = schema.struct_type(schema_type);
 
     let (type_base_class, type_prefixed_name) = schema_type.split_name();
     let (_, type_name_str) = schema_type.split_last_name();
@@ -617,7 +617,7 @@ fn gen_simple_child_match_arm(
 
     let simple_type_str = simple_type_mapping(first_name);
 
-    let enum_type: Type = parse_str(&format!("crate::common::simple_type::{simple_type_str}"))
+    let r#type: Type = parse_str(&format!("crate::common::simple_type::{simple_type_str}"))
         .map_err(BuildError::from)?;
 
     return Ok(match simple_type_str {
@@ -636,7 +636,7 @@ fn gen_simple_child_match_arm(
         | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => parse_quote! {
           quick_xml::events::Event::Text(t) => {
             xml_content = Some(
-              t.decode().map_err(crate::common::SdkError::from)?.parse::<#enum_type>().map_err(crate::common::SdkError::from)?
+              t.decode().map_err(crate::common::SdkError::from)?.parse::<#r#type>().map_err(crate::common::SdkError::from)?
             );
           }
         },
