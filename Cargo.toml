@@ -22,7 +22,7 @@ ooxmlsdk-build = { path = "crates/ooxmlsdk-build" }
 proc-macro2 = "1.0.106"
 quick-xml = "0.39"
 quote = "1.0.44"
-rootcause = "0.11"
+rootcause = "0.12"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 syn = "2.0.114"
