@@ -24,7 +24,7 @@ impl Deserializeable for Types {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"w:Types", b"Types")?;
+        let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"Types", b"Types")?;
 
         let mut xmlns = None;
         let mut xmlns_map = BTreeMap::<String, String>::new();
@@ -76,11 +76,8 @@ impl Deserializeable for Types {
                         e_empty = true;
                         e_opt = Some(e);
                     }
-                    quick_xml::events::Event::End(e) => match e.name().as_ref() {
-                        b"w:Types" | b"Types" => {
-                            break;
-                        }
-                        _ => (),
+                    quick_xml::events::Event::End(e) => if e.name().as_ref() == b"Types" {
+                        break;
                     },
                     quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
                     _ => (),
@@ -88,12 +85,12 @@ impl Deserializeable for Types {
 
                 if let Some(e) = e_opt {
                     match e.name().as_ref() {
-                        b"w:Default" | b"Default" => {
+                        b"Default" => {
                             children.push(TypesChildChoice::Default(std::boxed::Box::new(
                                 Default::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                             )));
                         }
-                        b"w:Override" | b"Override" => {
+                        b"Override" => {
                             children.push(TypesChildChoice::Override(std::boxed::Box::new(
                                 Override::deserialize_inner(xml_reader, Some((e, e_empty)))?,
                             )));
@@ -116,7 +113,7 @@ impl Deserializeable for Types {
 impl Serializeable for Types {
     const PREFIXED_NAME: &str = "Types";
 
-    const NAME: &str = "w:Types";
+    const NAME: &str = "Types";
 
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
@@ -168,7 +165,7 @@ impl Deserializeable for Default {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Default", b"Default")?;
+        let (e, _) = expect_event_start(xml_reader, xml_event, b"Default", b"Default")?;
 
         let mut extension = None;
         let mut content_type = None;
@@ -209,7 +206,7 @@ impl Deserializeable for Default {
 }
 
 impl Serializeable for Default {
-    const PREFIXED_NAME: &str = "w:Default";
+    const PREFIXED_NAME: &str = "Default";
 
     const NAME: &str = "Default";
 
@@ -237,7 +234,7 @@ impl Deserializeable for Override {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start(xml_reader, xml_event, b"w:Override", b"Override")?;
+        let (e, _) = expect_event_start(xml_reader, xml_event, b"Override", b"Override")?;
 
         let mut content_type = None;
         let mut part_name = None;
@@ -278,7 +275,7 @@ impl Deserializeable for Override {
 }
 
 impl Serializeable for Override {
-    const PREFIXED_NAME: &str = "w:Override";
+    const PREFIXED_NAME: &str = "Override";
 
     const NAME: &str = "Override";
 
