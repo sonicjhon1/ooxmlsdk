@@ -284,7 +284,7 @@ impl Serializeable for Override {
             String::with_capacity(const { "Extension".len() + "PartName".len() + 32 });
 
         attributes.push_str(&as_xml_attribute("ContentType", &self.content_type));
-        attributes.push_str(&as_xml_attribute("PartName", &self.content_type));
+        attributes.push_str(&as_xml_attribute("PartName", &self.part_name));
 
         return Some(attributes);
     }
