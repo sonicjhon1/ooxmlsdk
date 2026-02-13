@@ -4,4 +4,5 @@ pub mod open_xml_part;
 pub mod open_xml_schema;
 pub mod serializer;
 pub mod simple_type;
+pub mod tagger;
 pub mod validator;

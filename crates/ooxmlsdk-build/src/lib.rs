@@ -1,5 +1,7 @@
 #![feature(trim_prefix_suffix)]
 #![feature(strip_circumfix)]
+#![feature(const_option_ops)]
+#![feature(const_trait_impl)]
 
 use quote::{ToTokens, format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -10,7 +12,7 @@ use crate::{
     error::*,
     generator::{
         context::GenContext, deserializer::gen_deserializers,
-        open_xml_schema::gen_open_xml_schemas, serializer::gen_serializer,
+        open_xml_schema::gen_open_xml_schemas, serializer::gen_serializer, tagger::gen_tagger,
     },
     utils::HashMapOpsError,
 };
@@ -114,6 +116,7 @@ pub fn generate_with(
         write_serializers,
         #[cfg(feature = "parts")]
         write_parts,
+        write_tagger,
         #[cfg(feature = "validators")]
         write_validators,
     ]
@@ -260,6 +263,26 @@ pub(crate) fn write_parts(
                 &part.module_name,
                 &gen_open_xml_parts(part, gen_context)?,
             );
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    fs::write(out_dir.join("mod.rs"), mod_rs_lines.join("\n")).map_err(BuildError::from)?;
+
+    Ok(())
+}
+
+pub(crate) fn write_tagger(
+    gen_context: &GenContext,
+    out_base_dir: &Path,
+) -> Result<(), BuildErrorReport> {
+    let out_dir = &out_base_dir.join("tagger");
+    fs::create_dir_all(out_dir).map_err(BuildError::from)?;
+
+    let mod_rs_lines = gen_context
+        .schemas
+        .par_iter()
+        .map(|part| {
+            return generate_pub_item_mod(out_dir, &part.module_name, &gen_tagger(part)?);
         })
         .collect::<Result<Vec<_>, _>>()?;
 

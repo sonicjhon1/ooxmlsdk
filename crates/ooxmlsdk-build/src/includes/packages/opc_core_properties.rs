@@ -24,6 +24,12 @@ pub struct CoreProperties {
     pub version: Option<String>,
 }
 
+impl const Taggable for CoreProperties {
+    const PREFIXED_NAME: Option<&str> = Some("cp:coreProperties");
+    const PREFIX: Option<&str> = Some("cp");
+    const NAME: &str = "coreProperties";
+}
+
 impl Deserializeable for CoreProperties {
     fn deserialize_inner<'de>(
         xml_reader: &mut impl XmlReader<'de>,
@@ -256,10 +262,6 @@ impl Deserializeable for CoreProperties {
 }
 
 impl Serializeable for CoreProperties {
-    const PREFIXED_NAME: &str = "cp:coreProperties";
-
-    const NAME: &str = "coreProperties";
-
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
             const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },

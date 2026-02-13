@@ -1,3 +1,6 @@
+#![feature(const_trait_impl)]
+#![feature(const_option_ops)]
+
 pub mod common {
     include!(concat!(env!("OUT_DIR"), "/common/mod.rs"));
 }
@@ -17,6 +20,10 @@ pub mod serializers {
 #[cfg(feature = "parts")]
 pub mod parts {
     include!(concat!(env!("OUT_DIR"), "/parts/mod.rs"));
+}
+
+pub mod taggable {
+    include!(concat!(env!("OUT_DIR"), "/tagger/mod.rs"));
 }
 
 #[cfg(feature = "validators")]

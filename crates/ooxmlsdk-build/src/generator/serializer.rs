@@ -54,9 +54,6 @@ fn gen_schema_type(
 
     let struct_type = schema.struct_type(schema_type);
 
-    let (_, type_prefixed_name) = schema_type.split_name();
-    let (_, type_name) = schema_type.split_last_name();
-
     let attributes_ident = format_ident!("attributes");
     let mut xml_tag_attributes_inner: Vec<TokenStream> = vec![];
     for attribute in &schema_type.attributes {
@@ -72,10 +69,6 @@ fn gen_schema_type(
         &xml_inner_ident,
         gen_context,
     )?;
-
-    // TODO: Is this needed?
-    // let xml_needs_header =
-    //     !schema_type.part.is_empty() || schema_type.base_class == "OpenXmlPartRootElement";
 
     let xml_tag_attributes_xmlns_inner = if !schema_type.part.is_empty()
         || schema_type.base_class == "OpenXmlPartRootElement"
@@ -153,10 +146,6 @@ fn gen_schema_type(
 
     return Ok(quote!(
       impl Serializeable for #struct_type {
-          const PREFIXED_NAME: &str = #type_prefixed_name;
-
-          const NAME: &str = #type_name;
-
           #xml_tag_attributes
 
           #xml_inner

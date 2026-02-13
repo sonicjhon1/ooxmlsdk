@@ -9,6 +9,10 @@ pub struct Relationships {
     pub relationship: Vec<Relationship>,
 }
 
+impl const Taggable for Relationships {
+    const NAME: &str = "Relationships";
+}
+
 impl Deserializeable for Relationships {
     fn deserialize_inner<'de>(
         xml_reader: &mut impl XmlReader<'de>,
@@ -90,10 +94,6 @@ impl Deserializeable for Relationships {
 }
 
 impl Serializeable for Relationships {
-    const PREFIXED_NAME: &str = "Relationships";
-
-    const NAME: &str = "Relationships";
-
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(const { "xmlns".len() + 32 });
 
@@ -121,6 +121,10 @@ pub struct Relationship {
     pub target: String,
     pub r#type: String,
     pub id: String,
+}
+
+impl const Taggable for Relationship {
+    const NAME: &str = "Relationship";
 }
 
 impl Deserializeable for Relationship {
@@ -190,10 +194,6 @@ impl Deserializeable for Relationship {
 }
 
 impl Serializeable for Relationship {
-    const PREFIXED_NAME: &str = "Relationship";
-
-    const NAME: &str = "Relationship";
-
     fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
             const { "TargetMode".len() + "Target".len() + "Type".len() + "Id".len() + 32 },

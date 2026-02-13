@@ -91,7 +91,15 @@ impl<'de> XmlReader<'de> for SliceReader<'de> {
     fn decoder(&self) -> Decoder { self.reader.decoder() }
 }
 
-pub trait Deserializeable: Sized {
+pub const trait Taggable {
+    const PREFIXED_NAME: Option<&str> = None;
+    const PREFIX: Option<&str> = None;
+    const NAME: &str;
+
+    fn prefixed_name_or_name() -> &'static str { Self::PREFIXED_NAME.unwrap_or(Self::NAME) }
+}
+
+pub trait Deserializeable: const Taggable + Sized {
     fn from_str(str: impl AsRef<str>) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = quick_xml::Reader::from_str(str.as_ref());
         xml_reader.config_mut().check_end_names = false;
@@ -122,23 +130,19 @@ pub trait Deserializeable: Sized {
     ) -> Result<Self, SdkErrorReport>;
 }
 
-pub trait Serializeable {
-    const PREFIXED_NAME: &str;
-
-    const NAME: &str;
-
+pub trait Serializeable: const Taggable {
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String>;
 
     fn xml_inner(&self, with_xmlns: bool) -> Option<String>;
 
     #[inline]
     fn xml_tag_start(&self, with_xmlns: bool) -> String {
-        let mut xml = String::with_capacity(const { Self::PREFIXED_NAME.len() + 32 });
+        let mut xml = String::with_capacity(const { Self::prefixed_name_or_name().len() + 32 });
 
         xml.push('<');
 
         if with_xmlns {
-            xml.push_str(Self::PREFIXED_NAME);
+            xml.push_str(Self::prefixed_name_or_name());
         } else {
             xml.push_str(Self::NAME);
         }
@@ -154,12 +158,12 @@ pub trait Serializeable {
 
     #[inline]
     fn xml_tag_end(&self, with_xmlns: bool) -> String {
-        let mut xml = String::with_capacity(const { Self::PREFIXED_NAME.len() + 3 });
+        let mut xml = String::with_capacity(const { Self::prefixed_name_or_name().len() + 3 });
 
         xml.push_str("</");
 
         if with_xmlns {
-            xml.push_str(Self::PREFIXED_NAME);
+            xml.push_str(Self::prefixed_name_or_name());
         } else {
             xml.push_str(Self::NAME);
         }

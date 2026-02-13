@@ -19,6 +19,10 @@ pub enum TypesChildChoice {
     None,
 }
 
+impl const Taggable for Types {
+    const NAME: &str = "Types";
+}
+
 impl Deserializeable for Types {
     fn deserialize_inner<'de>(
         xml_reader: &mut impl XmlReader<'de>,
@@ -76,9 +80,11 @@ impl Deserializeable for Types {
                         e_empty = true;
                         e_opt = Some(e);
                     }
-                    quick_xml::events::Event::End(e) => if e.name().as_ref() == b"Types" {
-                        break;
-                    },
+                    quick_xml::events::Event::End(e) => {
+                        if e.name().as_ref() == b"Types" {
+                            break;
+                        }
+                    }
                     quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
                     _ => (),
                 }
@@ -111,10 +117,6 @@ impl Deserializeable for Types {
 }
 
 impl Serializeable for Types {
-    const PREFIXED_NAME: &str = "Types";
-
-    const NAME: &str = "Types";
-
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
         let mut attributes = String::with_capacity(
             const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
@@ -158,6 +160,10 @@ impl Serializeable for Types {
 pub struct Default {
     pub extension: String,
     pub content_type: String,
+}
+
+impl const Taggable for Default {
+    const NAME: &str = "Default";
 }
 
 impl Deserializeable for Default {
@@ -206,10 +212,6 @@ impl Deserializeable for Default {
 }
 
 impl Serializeable for Default {
-    const PREFIXED_NAME: &str = "Default";
-
-    const NAME: &str = "Default";
-
     fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
         let mut attributes =
             String::with_capacity(const { "Extension".len() + "ContentType".len() + 32 });
@@ -227,6 +229,10 @@ impl Serializeable for Default {
 pub struct Override {
     pub content_type: String,
     pub part_name: String,
+}
+
+impl const Taggable for Override {
+    const NAME: &str = "Override";
 }
 
 impl Deserializeable for Override {
@@ -275,10 +281,6 @@ impl Deserializeable for Override {
 }
 
 impl Serializeable for Override {
-    const PREFIXED_NAME: &str = "Override";
-
-    const NAME: &str = "Override";
-
     fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
         let mut attributes =
             String::with_capacity(const { "Extension".len() + "PartName".len() + 32 });
