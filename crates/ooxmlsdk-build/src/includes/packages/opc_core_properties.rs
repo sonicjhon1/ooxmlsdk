@@ -1,12 +1,9 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
-use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct CoreProperties {
-    pub xmlns: Option<String>,
-    pub xmlns_map: BTreeMap<String, String>,
-    pub mc_ignorable: Option<String>,
+    pub xmlns: XmlNamespace,
     pub category: Option<String>,
     pub content_status: Option<String>,
     pub created: Option<String>,
@@ -24,7 +21,7 @@ pub struct CoreProperties {
     pub version: Option<String>,
 }
 
-impl const Taggable for CoreProperties {
+impl Taggable for CoreProperties {
     const PREFIXED_NAME: Option<&str> = Some("cp:coreProperties");
     const PREFIX: Option<&str> = Some("cp");
     const NAME: &str = "coreProperties";
@@ -35,18 +32,9 @@ impl Deserializeable for CoreProperties {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, empty_tag) = expect_event_start(
-            xml_reader,
-            xml_event,
-            b"cp:coreProperties",
-            b"coreProperties",
-        )?;
+        let (e, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
 
-        let mut xmlns = None;
-
-        let mut xmlns_map = BTreeMap::<String, String>::new();
-
-        let mut mc_ignorable = None;
+        let mut xmlns = XmlNamespace::default();
 
         let mut category: Option<String> = None;
 
@@ -80,39 +68,14 @@ impl Deserializeable for CoreProperties {
 
         for attr in e.attributes() {
             let attr = attr.map_err(SdkError::from)?;
-            match attr.key.as_ref() {
-                b"xmlns" => {
-                    xmlns = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())
-                            .map_err(SdkError::from)?
-                            .to_string(),
-                    );
-                }
-                b"mc:Ignorable" => {
-                    mc_ignorable = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())
-                            .map_err(SdkError::from)?
-                            .to_string(),
-                    );
-                }
-                key => {
-                    if key.starts_with(b"xmlns:") {
-                        xmlns_map.insert(
-                            String::from_utf8_lossy(&key[6..]).to_string(),
-                            attr.decode_and_unescape_value(xml_reader.decoder())
-                                .map_err(SdkError::from)?
-                                .to_string(),
-                        );
-                    }
-                }
-            }
+            let _ = xmlns.deserialize_attributes(xml_reader, &attr)?;
         }
 
         if !empty_tag {
             loop {
                 match xml_reader.next()? {
                     quick_xml::events::Event::Start(e) | quick_xml::events::Event::Empty(e) => {
-                        match e.name().as_ref() {
+                        match e.name().0 {
                             b"cp:category" => {
                                 if let quick_xml::events::Event::Text(t) = xml_reader.next()? {
                                     category = Some(t.decode().map_err(SdkError::from)?.to_string())
@@ -223,15 +186,12 @@ impl Deserializeable for CoreProperties {
 
                                 xml_reader.next()?;
                             }
-                            _ => Err(SdkError::CommonError("coreProperties".to_string()))?,
+                            _ => Err(SdkError::CommonError(Self::NAME.to_string()))?,
                         }
                     }
-                    quick_xml::events::Event::End(e) => match e.name().as_ref() {
-                        b"cp:coreProperties" | b"coreProperties" => {
-                            break;
-                        }
-                        _ => (),
-                    },
+                    quick_xml::events::Event::End(e) if Self::matched_name(e.name().0) => {
+                        break;
+                    }
                     quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
                     _ => (),
                 }
@@ -240,8 +200,6 @@ impl Deserializeable for CoreProperties {
 
         Ok(Self {
             xmlns,
-            xmlns_map,
-            mc_ignorable,
             category,
             content_status,
             created,
@@ -263,23 +221,7 @@ impl Deserializeable for CoreProperties {
 
 impl Serializeable for CoreProperties {
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
-        let mut attributes = String::with_capacity(
-            const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
-        );
-
-        if with_xmlns && let Some(xmlns) = &self.xmlns {
-            attributes.push_str(&as_xml_attribute("xmlns", xmlns));
-        }
-
-        for (key, value) in &self.xmlns_map {
-            attributes.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
-        }
-
-        if let Some(mc_ignorable) = &self.mc_ignorable {
-            attributes.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
-        }
-
-        return Some(attributes);
+        return Some(self.xmlns.serialize_attributes(with_xmlns));
     }
 
     fn xml_inner(&self, _with_xmlns: bool) -> Option<String> {

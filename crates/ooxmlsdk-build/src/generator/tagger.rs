@@ -54,7 +54,7 @@ fn gen_schema_type(
     };
 
     return Ok(quote!(
-      impl const Taggable for #struct_type {
+      impl Taggable for #struct_type {
           #( #type_items )*
           const NAME: &str = #type_name;
       }

@@ -1,9 +1,9 @@
 use quick_xml::{
     Decoder, Reader,
-    events::{BytesStart, Event},
+    events::{BytesStart, Event, attributes::Attribute},
 };
 use rootcause::prelude::*;
-use std::{io::BufRead, path::Path};
+use std::{collections::BTreeMap, io::BufRead, path::Path};
 use thiserror::Error;
 use tracing::*;
 
@@ -91,15 +91,20 @@ impl<'de> XmlReader<'de> for SliceReader<'de> {
     fn decoder(&self) -> Decoder { self.reader.decoder() }
 }
 
-pub const trait Taggable {
+pub trait Taggable {
     const PREFIXED_NAME: Option<&str> = None;
     const PREFIX: Option<&str> = None;
     const NAME: &str;
 
     fn prefixed_name_or_name() -> &'static str { Self::PREFIXED_NAME.unwrap_or(Self::NAME) }
+
+    fn matched_name(bytes: &[u8]) -> bool {
+        return bytes == Self::NAME.as_bytes()
+            || Some(bytes) == Self::PREFIXED_NAME.map(|s| s.as_bytes());
+    }
 }
 
-pub trait Deserializeable: const Taggable + Sized {
+pub trait Deserializeable: Taggable + Sized {
     fn from_str(str: impl AsRef<str>) -> Result<Self, SdkErrorReport> {
         let mut xml_reader = quick_xml::Reader::from_str(str.as_ref());
         xml_reader.config_mut().check_end_names = false;
@@ -130,14 +135,14 @@ pub trait Deserializeable: const Taggable + Sized {
     ) -> Result<Self, SdkErrorReport>;
 }
 
-pub trait Serializeable: const Taggable {
-    fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String>;
+pub trait Serializeable: Taggable {
+    fn xml_tag_attributes(&self, _with_xmln: bool) -> Option<String> { return None; }
 
-    fn xml_inner(&self, with_xmlns: bool) -> Option<String>;
+    fn xml_inner(&self, _with_xmlns: bool) -> Option<String> { return None; }
 
     #[inline]
     fn xml_tag_start(&self, with_xmlns: bool) -> String {
-        let mut xml = String::with_capacity(const { Self::prefixed_name_or_name().len() + 32 });
+        let mut xml = String::with_capacity(Self::prefixed_name_or_name().len() + 32);
 
         xml.push('<');
 
@@ -158,7 +163,7 @@ pub trait Serializeable: const Taggable {
 
     #[inline]
     fn xml_tag_end(&self, with_xmlns: bool) -> String {
-        let mut xml = String::with_capacity(const { Self::prefixed_name_or_name().len() + 3 });
+        let mut xml = String::with_capacity(Self::prefixed_name_or_name().len() + 3);
 
         xml.push_str("</");
 
@@ -214,6 +219,73 @@ pub trait Serializeable: const Taggable {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+pub struct XmlNamespace {
+    pub xmlns: Option<String>,
+    pub xmlns_map: BTreeMap<String, String>,
+    pub mc_ignorable: Option<String>,
+}
+
+impl XmlNamespace {
+    pub fn serialize_attributes(&self, with_xmlns: bool) -> String {
+        let mut attributes = String::with_capacity(
+            const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
+        );
+
+        if with_xmlns && let Some(xmlns) = &self.xmlns {
+            attributes.push_str(&as_xml_attribute("xmlns", xmlns));
+        }
+
+        for (key, value) in &self.xmlns_map {
+            attributes.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
+        }
+
+        if let Some(mc_ignorable) = &self.mc_ignorable {
+            attributes.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
+        }
+
+        return attributes;
+    }
+
+    pub fn deserialize_attributes<'de>(
+        &mut self,
+        xml_reader: &mut impl XmlReader<'de>,
+        attribute: &Attribute<'_>,
+    ) -> Result<Option<()>, SdkErrorReport> {
+        match attribute.key.0 {
+            b"xmlns" => {
+                self.xmlns = Some(
+                    attribute
+                        .decode_and_unescape_value(xml_reader.decoder())
+                        .map_err(SdkError::from)?
+                        .into_owned(),
+                );
+                Ok(Some(()))
+            }
+            b"mc:Ignorable" => {
+                self.mc_ignorable = Some(
+                    attribute
+                        .decode_and_unescape_value(xml_reader.decoder())
+                        .map_err(SdkError::from)?
+                        .into_owned(),
+                );
+                Ok(Some(()))
+            }
+            other if let Some(ns) = other.strip_prefix(b"xmlns:") => {
+                self.xmlns_map.insert(
+                    String::from_utf8_lossy(ns).to_string(),
+                    attribute
+                        .decode_and_unescape_value(xml_reader.decoder())
+                        .map_err(SdkError::from)?
+                        .into_owned(),
+                );
+                Ok(Some(()))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
 pub fn resolve_zip_file_path(path: &str) -> String {
     let mut stack = Vec::new();
 
@@ -263,14 +335,10 @@ pub fn as_xml_attribute(key: &str, value: &str) -> String {
 }
 
 #[inline(always)]
-pub(crate) fn expect_event_start<'de>(
+pub(crate) fn expect_event_start<'de, T: Taggable>(
     xml_reader: &mut impl XmlReader<'de>,
     xml_event: Option<(BytesStart<'de>, bool)>,
-    tag_prefixed: &[u8],
-    tag: &[u8],
 ) -> Result<(BytesStart<'de>, bool), SdkErrorReport> {
-    debug!("xml_event: {:?}", xml_event);
-
     if let Some((event, empty_tag)) = xml_event {
         return Ok((event, empty_tag));
     }
@@ -290,20 +358,20 @@ pub(crate) fn expect_event_start<'de>(
         }
     };
 
-    debug!("({event:?}, {empty_tag})");
-
     let event_name = event.name().0;
-    if !(event_name == tag_prefixed || event_name == tag) {
-        let expected_tag_prefixed = String::from_utf8_lossy(tag_prefixed).to_string();
-        let expected_tag = String::from_utf8_lossy(tag).to_string();
+    if !T::matched_name(event_name) {
+        let expected_tags = [Some(T::NAME), T::PREFIXED_NAME]
+            .into_iter()
+            .flatten()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
         let found_event_name = String::from_utf8_lossy(event_name).to_string();
 
-        warn!(
-            "Mismatch: [{found_event_name}] does not match [{expected_tag_prefixed}] OR [{expected_tag}]"
-        );
+        warn!("Mismatch: [{found_event_name}] does not match any of [{expected_tags}]");
 
         Err(SdkError::MismatchError {
-            expected: format!("{expected_tag_prefixed} OR {expected_tag}"),
+            expected: format!("Any of [{expected_tags}]"),
             found: found_event_name,
         })?;
     }

@@ -1,5 +1,6 @@
 #![feature(const_trait_impl)]
 #![feature(const_option_ops)]
+#![feature(if_let_guard)]
 
 pub mod common {
     include!(concat!(env!("OUT_DIR"), "/common/mod.rs"));

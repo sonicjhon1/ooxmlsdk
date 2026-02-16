@@ -94,6 +94,19 @@ impl OpenXmlSchema {
 
         return parse_quote!(crate::schemas::#module_name::#ident);
     }
+
+    pub fn needs_xmlns(&self, schema_type: &OpenXmlSchemaType) -> bool {
+        !schema_type.part.is_empty()
+            || schema_type.base_class == "OpenXmlPartRootElement"
+            || ((schema_type.base_class == "OpenXmlCompositeElement"
+                || schema_type.base_class == "CustomXmlElement"
+                || schema_type.base_class == "OpenXmlPartRootElement"
+                || schema_type.base_class == "SdtElement")
+                && (self.target_namespace
+                    == "http://schemas.openxmlformats.org/drawingml/2006/main"
+                    || self.target_namespace
+                        == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

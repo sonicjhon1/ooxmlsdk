@@ -80,15 +80,7 @@ fn gen_schema_type(
             || schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/picture"
         {
             fields.push(quote! {
-                pub xmlns: Option<String>,
-            });
-
-            fields.push(quote! {
-                pub xmlns_map: std::collections::BTreeMap<String, String>,
-            });
-
-            fields.push(quote! {
-                pub mc_ignorable: Option<String>,
+                pub xmlns: crate::common::XmlNamespace,
             });
         }
 

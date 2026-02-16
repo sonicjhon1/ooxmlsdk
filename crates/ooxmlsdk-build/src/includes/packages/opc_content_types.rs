@@ -1,13 +1,10 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
 use rootcause::option_ext::OptionExt;
-use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Types {
-    pub xmlns: Option<String>,
-    pub xmlns_map: BTreeMap<String, String>,
-    pub mc_ignorable: Option<String>,
+    pub xmlns: XmlNamespace,
     pub children: Vec<TypesChildChoice>,
 }
 
@@ -19,7 +16,7 @@ pub enum TypesChildChoice {
     None,
 }
 
-impl const Taggable for Types {
+impl Taggable for Types {
     const NAME: &str = "Types";
 }
 
@@ -28,43 +25,15 @@ impl Deserializeable for Types {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, empty_tag) = expect_event_start(xml_reader, xml_event, b"Types", b"Types")?;
+        let (e, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
 
-        let mut xmlns = None;
-        let mut xmlns_map = BTreeMap::<String, String>::new();
-        let mut mc_ignorable = None;
+        let mut xmlns = XmlNamespace::default();
 
         let mut children = vec![];
 
         for attr in e.attributes().with_checks(false) {
             let attr = attr.map_err(SdkError::from)?;
-
-            match attr.key.as_ref() {
-                b"xmlns" => {
-                    xmlns = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())
-                            .map_err(SdkError::from)?
-                            .into_owned(),
-                    );
-                }
-                b"mc:Ignorable" => {
-                    mc_ignorable = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())
-                            .map_err(SdkError::from)?
-                            .into_owned(),
-                    );
-                }
-                key => {
-                    if key.starts_with(b"xmlns:") {
-                        xmlns_map.insert(
-                            String::from_utf8_lossy(&key[6..]).to_string(),
-                            attr.decode_and_unescape_value(xml_reader.decoder())
-                                .map_err(SdkError::from)?
-                                .into_owned(),
-                        );
-                    }
-                }
-            }
+            let _ = xmlns.deserialize_attributes(xml_reader, &attr)?;
         }
 
         if !empty_tag {
@@ -80,61 +49,36 @@ impl Deserializeable for Types {
                         e_empty = true;
                         e_opt = Some(e);
                     }
-                    quick_xml::events::Event::End(e) => {
-                        if e.name().as_ref() == b"Types" {
-                            break;
-                        }
+                    quick_xml::events::Event::End(e) if Self::matched_name(e.name().0) => {
+                        break;
                     }
                     quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
                     _ => (),
                 }
 
                 if let Some(e) = e_opt {
-                    match e.name().as_ref() {
-                        b"Default" => {
-                            children.push(TypesChildChoice::Default(std::boxed::Box::new(
-                                Default::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                            )));
-                        }
-                        b"Override" => {
-                            children.push(TypesChildChoice::Override(std::boxed::Box::new(
-                                Override::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                            )));
-                        }
-                        _ => Err(SdkError::CommonError("Types".to_string()))?,
+                    let event_name = e.name().0;
+
+                    if Default::matched_name(event_name) {
+                        children.push(TypesChildChoice::Default(std::boxed::Box::new(
+                            Default::deserialize_inner(xml_reader, Some((e, e_empty)))?,
+                        )))
+                    } else if Override::matched_name(event_name) {
+                        children.push(TypesChildChoice::Override(std::boxed::Box::new(
+                            Override::deserialize_inner(xml_reader, Some((e, e_empty)))?,
+                        )));
                     }
                 }
             }
         }
 
-        Ok(Self {
-            xmlns,
-            xmlns_map,
-            mc_ignorable,
-            children,
-        })
+        Ok(Self { xmlns, children })
     }
 }
 
 impl Serializeable for Types {
     fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
-        let mut attributes = String::with_capacity(
-            const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 32 },
-        );
-
-        if with_xmlns && let Some(xmlns) = &self.xmlns {
-            attributes.push_str(&as_xml_attribute("xmlns", xmlns));
-        }
-
-        for (key, value) in &self.xmlns_map {
-            attributes.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
-        }
-
-        if let Some(mc_ignorable) = &self.mc_ignorable {
-            attributes.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
-        }
-
-        return Some(attributes);
+        return Some(self.xmlns.serialize_attributes(with_xmlns));
     }
 
     fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
@@ -162,7 +106,7 @@ pub struct Default {
     pub content_type: String,
 }
 
-impl const Taggable for Default {
+impl Taggable for Default {
     const NAME: &str = "Default";
 }
 
@@ -171,7 +115,7 @@ impl Deserializeable for Default {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start(xml_reader, xml_event, b"Default", b"Default")?;
+        let (e, _) = expect_event_start::<Self>(xml_reader, xml_event)?;
 
         let mut extension = None;
         let mut content_type = None;
@@ -231,7 +175,7 @@ pub struct Override {
     pub part_name: String,
 }
 
-impl const Taggable for Override {
+impl Taggable for Override {
     const NAME: &str = "Override";
 }
 
@@ -240,7 +184,7 @@ impl Deserializeable for Override {
         xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(BytesStart<'de>, bool)>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start(xml_reader, xml_event, b"Override", b"Override")?;
+        let (e, _) = expect_event_start::<Self>(xml_reader, xml_event)?;
 
         let mut content_type = None;
         let mut part_name = None;

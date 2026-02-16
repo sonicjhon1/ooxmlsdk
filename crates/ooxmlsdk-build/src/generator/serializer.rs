@@ -54,102 +54,66 @@ fn gen_schema_type(
 
     let struct_type = schema.struct_type(schema_type);
 
-    let attributes_ident = format_ident!("attributes");
-    let mut xml_tag_attributes_inner: Vec<TokenStream> = vec![];
-    for attribute in &schema_type.attributes {
-        xml_tag_attributes_inner.push(gen_attr(attribute, &attributes_ident));
+    let with_xmlns_ident = format_ident!("with_xmlns");
+
+    let xml_attr_ident = format_ident!("attr");
+    let mut xml_attr_impl_item_fn: Option<ImplItemFn> = None;
+    let xml_inner_ident = format_ident!("xml");
+    let mut xml_inner_impl_item_fn: Option<ImplItemFn> = None;
+
+    let mut xml_attr_writers: Vec<TokenStream> = Vec::with_capacity(schema_type.attributes.len());
+
+    if schema.needs_xmlns(schema_type) {
+        xml_attr_writers.push(quote! {
+            #xml_attr_ident.push_str(&self.xmlns.serialize_attributes(#with_xmlns_ident));
+        })
     }
 
-    let xml_inner_ident = format_ident!("xml");
+    for attr_schema in &schema_type.attributes {
+        xml_attr_writers.push(gen_attr_writer(attr_schema, &xml_attr_ident));
+    }
+
     let xml_inner_writer = gen_inner_writer(
         schema,
         schema_type,
-        &attributes_ident,
-        &mut xml_tag_attributes_inner,
+        &xml_attr_ident,
+        &mut xml_attr_writers,
         &xml_inner_ident,
         gen_context,
     )?;
 
-    let xml_tag_attributes_xmlns_inner = if !schema_type.part.is_empty()
-        || schema_type.base_class == "OpenXmlPartRootElement"
-        || ((schema_type.base_class == "OpenXmlCompositeElement"
-            || schema_type.base_class == "CustomXmlElement"
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || schema_type.base_class == "SdtElement")
-            && (schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/main"
-                || schema.target_namespace
-                    == "http://schemas.openxmlformats.org/drawingml/2006/picture"))
-    {
-        Some(quote! {
-          if with_xmlns{
-            if let Some(xmlns) = &self.xmlns {
-                #attributes_ident.push_str(&as_xml_attribute("xmlns", xmlns));
-            } else {
-                tracing::warn!("with_xmlns is true, but {}::xmlns is None.", Self::NAME);
-            }
-          }
-
-          for (key, value) in &self.xmlns_map {
-            #attributes_ident.push_str(&as_xml_attribute(&format!("xmlns:{key}"), value));
-          }
-
-          if let Some(mc_ignorable) = &self.mc_ignorable {
-            #attributes_ident.push_str(&as_xml_attribute("mc:Ignorable", mc_ignorable));
-          }
-        })
-    } else {
-        None
-    };
-
-    let xml_tag_attributes: ImplItemFn =
-        if xml_tag_attributes_xmlns_inner.is_some() || !xml_tag_attributes_inner.is_empty() {
-            parse_quote! {
-              #[allow(unused_variables)]
-              fn xml_tag_attributes(&self, with_xmlns: bool) -> Option<String> {
-                  let mut #attributes_ident = String::with_capacity(
-                    const { "xmlns".len() + "xmlns:".len() + "mc:Ignorable".len() + 64 },
-                  );
-
-                  #xml_tag_attributes_xmlns_inner
-
-                  #( #xml_tag_attributes_inner )*
-
-                  return Some(#attributes_ident);
-              }
-            }
-        } else {
-            parse_quote! {
-              fn xml_tag_attributes(&self, _with_xmlns: bool) -> Option<String> {
-                  return None;
-              }
-            }
-        };
-
-    let xml_inner: ImplItemFn = if xml_inner_writer.is_some() {
-        parse_quote!(
+    if !xml_attr_writers.is_empty() {
+        xml_attr_impl_item_fn = Some(parse_quote! {
             #[allow(unused_variables)]
-            fn xml_inner(&self, with_xmlns: bool) -> Option<String> {
+            fn xml_tag_attributes(&self, #with_xmlns_ident: bool) -> Option<String> {
+                let mut #xml_attr_ident = String::new();
+
+                #( #xml_attr_writers )*
+
+                return Some(#xml_attr_ident);
+            }
+        });
+    }
+
+    if xml_inner_writer.is_some() {
+        xml_inner_impl_item_fn = Some(parse_quote!(
+            #[allow(unused_variables)]
+            fn xml_inner(&self, #with_xmlns_ident: bool) -> Option<String> {
                 let mut #xml_inner_ident = String::with_capacity(512);
 
                 #xml_inner_writer
 
                 return Some(#xml_inner_ident);
             }
-        )
-    } else {
-        parse_quote! {
-            fn xml_inner(&self, _with_xmlns: bool) -> Option<String> {
-                return None;
-            }
-        }
+        ))
     };
 
     return Ok(quote!(
-      impl Serializeable for #struct_type {
-          #xml_tag_attributes
+        impl Serializeable for #struct_type {
+            #xml_attr_impl_item_fn
 
-          #xml_inner
-      }
+            #xml_inner_impl_item_fn
+        }
     )
     .to_string());
 }
@@ -183,11 +147,14 @@ fn gen_schema_enum(
     .to_string());
 }
 
-fn gen_attr(schema: &OpenXmlSchemaTypeAttribute, attributes_ident: &Ident) -> TokenStream {
-    let attr_value_ident = schema.as_name_ident();
-    let attr_name_str = schema.as_name_str();
+fn gen_attr_writer(
+    attr_schema: &OpenXmlSchemaTypeAttribute,
+    attributes_ident: &Ident,
+) -> TokenStream {
+    let attr_value_ident = attr_schema.as_name_ident();
+    let attr_name_str = attr_schema.as_name_str();
 
-    if schema.is_validator_required() {
+    if attr_schema.is_validator_required() {
         quote! {
           #attributes_ident.push_str(&as_xml_attribute(#attr_name_str, &quick_xml::escape::escape(self.#attr_value_ident.to_string())));
         }
@@ -207,7 +174,7 @@ fn gen_children_match<'a>(
 ) -> Option<TokenStream> {
     let child_arms =
         children.map(|child| -> TokenStream {
-              let child_name_ident = child.as_last_name_ident();
+            let child_name_ident = child.as_last_name_ident();
 
             parse_quote! {
               #child_choice_enum_type::#child_name_ident(child) => #xml_inner_ident.push_str(&child.to_xml_string(false, with_xmlns)),
@@ -316,7 +283,7 @@ fn gen_inner_writer(
                 .try_get(format!("{type_base_class}/").as_str())?;
 
             for attribute in &base_class_type.attributes {
-                attributes_writer.push(gen_attr(attribute, attributes_ident));
+                attributes_writer.push(gen_attr_writer(attribute, attributes_ident));
             }
 
             // Children must be deduped

@@ -1,7 +1,7 @@
 #![feature(trim_prefix_suffix)]
 #![feature(strip_circumfix)]
-#![feature(const_option_ops)]
 #![feature(const_trait_impl)]
+#![feature(if_let_guard)]
 
 use quote::{ToTokens, format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};

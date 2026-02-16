@@ -7,7 +7,7 @@ use crate::{
     error::*,
     generator::{context::GenContext, simple_type::simple_type_mapping},
     models::*,
-    utils::HashMapOpsError,
+    utils::{HashMapOpsError, gen_use_common_glob},
 };
 
 pub fn gen_deserializers(
@@ -16,20 +16,24 @@ pub fn gen_deserializers(
 ) -> Result<String, BuildErrorReport> {
     let mut contents = String::with_capacity(const { 512 * 1024 });
 
-    contents.push_str(
-        &schema
-            .enums
-            .par_iter()
-            .map(|schema_enum| gen_schema_enum(schema, schema_enum))
-            .collect::<Result<Vec<_>, _>>()?
-            .join("\n"),
-    );
+    if !schema.types.is_empty() || !schema.enums.is_empty() {
+        contents.push_str(&gen_use_common_glob().to_string());
+    }
 
     contents.push_str(
         &schema
             .types
             .par_iter()
             .map(|schema_type| gen_schema_type(schema, schema_type, gen_context))
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n"),
+    );
+
+    contents.push_str(
+        &schema
+            .enums
+            .par_iter()
+            .map(|schema_enum| gen_schema_enum(schema, schema_enum))
             .collect::<Result<Vec<_>, _>>()?
             .join("\n"),
     );
@@ -46,18 +50,11 @@ fn gen_schema_type(
         return Ok(String::with_capacity(0));
     }
 
-    let schema_namespace = gen_context
-        .uri_namespace_map
-        .try_get(schema.target_namespace.as_str())?;
-
     let struct_type = schema.struct_type(schema_type);
 
-    let (type_base_class, type_prefixed_name) = schema_type.split_name();
-    let (_, type_name_str) = schema_type.split_last_name();
+    let (type_base_class, _) = schema_type.split_name();
 
-    let type_prefixed_name_literal: LitByteStr =
-        parse_str(&format!("b\"{type_prefixed_name}\"")).unwrap();
-    let type_name_literal: LitByteStr = parse_str(&format!("b\"{type_name_str}\"")).unwrap();
+    let event_ident = format_ident!("xml_bytes");
 
     let mut field_declaration_list: Vec<Stmt> = vec![];
     let mut attr_match_list: Vec<Arm> = vec![];
@@ -68,11 +65,19 @@ fn gen_schema_type(
     let mut loop_match_arm_list: Vec<Arm> = vec![];
 
     let mut loop_children_match_list: Vec<Arm> = vec![];
-    let mut loop_children_suffix_match_set: HashSet<String> = HashSet::new();
+    let mut loop_children_ident_set: HashSet<Ident> = HashSet::new();
 
     let mut attributes: Vec<&OpenXmlSchemaTypeAttribute> = vec![];
 
     let child_map = schema_type.child_map();
+
+    if schema.needs_xmlns(schema_type) {
+        field_declaration_list.push(parse_quote! {
+          let mut xmlns = XmlNamespace::default();
+        });
+
+        field_ident_list.push(format_ident!("xmlns"));
+    }
 
     if schema_type.base_class == "OpenXmlLeafTextElement" {
         for attr in &schema_type.attributes {
@@ -95,28 +100,6 @@ fn gen_schema_type(
         || schema_type.base_class == "OpenXmlPartRootElement"
         || schema_type.base_class == "SdtElement"
     {
-        if !schema_type.part.is_empty()
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/main"
-            || schema.target_namespace == "http://schemas.openxmlformats.org/drawingml/2006/picture"
-        {
-            field_declaration_list.push(parse_quote! {
-              let mut xmlns = None;
-            });
-
-            field_declaration_list.push(parse_quote! {
-              let mut xmlns_map = std::collections::BTreeMap::<String, String>::new();
-            });
-
-            field_declaration_list.push(parse_quote! {
-              let mut mc_ignorable = None;
-            });
-
-            field_ident_list.push(format_ident!("xmlns"));
-            field_ident_list.push(format_ident!("xmlns_map"));
-            field_ident_list.push(format_ident!("mc_ignorable"));
-        }
-
         for attr in &schema_type.attributes {
             attributes.push(attr);
         }
@@ -136,7 +119,7 @@ fn gen_schema_type(
 
                         field_unwrap_list.push(parse_quote! {
                             let #child_property_name_ident = #child_property_name_ident
-                                .ok_or_else(|| crate::common::SdkError::CommonError(#child_property_name_str.to_string()))?;
+                                .ok_or_else(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
                         });
                     }
                     Occurrence::Optional => {
@@ -153,12 +136,15 @@ fn gen_schema_type(
 
                 field_ident_list.push(child_property_name_ident);
 
-                loop_children_match_list.push(gen_one_sequence_match_arm(
+                if let Some(arm) = gen_one_sequence_match_arm(
+                    &event_ident,
                     schema_type_particle,
                     child,
                     gen_context,
-                    &mut loop_children_suffix_match_set,
-                )?);
+                    &mut loop_children_ident_set,
+                )? {
+                    loop_children_match_list.push(arm);
+                }
             }
         } else {
             if !schema_type.children.is_empty() {
@@ -174,12 +160,15 @@ fn gen_schema_type(
             let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
 
             for child in &schema_type.children {
-                loop_children_match_list.push(gen_child_match_arm(
+                if let Some(arm) = gen_child_match_arm(
+                    &event_ident,
                     child,
                     &child_choice_enum_type,
                     gen_context,
-                    &mut loop_children_suffix_match_set,
-                )?);
+                    &mut loop_children_ident_set,
+                )? {
+                    loop_children_match_list.push(arm);
+                }
             }
         }
     } else if schema_type.is_derived {
@@ -212,7 +201,7 @@ fn gen_schema_type(
 
                         field_unwrap_list.push(parse_quote! {
                             let #child_property_name_ident = #child_property_name_ident
-                                .ok_or_else(|| crate::common::SdkError::CommonError(#child_property_name_str.to_string()))?;
+                                .ok_or_else(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
                         });
                     }
                     Occurrence::Optional => {
@@ -253,23 +242,29 @@ fn gen_schema_type(
             for schema_type_particle in &schema_type.particle.items {
                 let child = child_map.try_get(schema_type_particle.name.as_str())?;
 
-                loop_children_match_list.push(gen_one_sequence_match_arm(
+                if let Some(arm) = gen_one_sequence_match_arm(
+                    &event_ident,
                     schema_type_particle,
                     child,
                     gen_context,
-                    &mut loop_children_suffix_match_set,
-                )?);
+                    &mut loop_children_ident_set,
+                )? {
+                    loop_children_match_list.push(arm);
+                }
             }
         } else {
             let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
 
             for child in &schema_type.children {
-                loop_children_match_list.push(gen_child_match_arm(
+                if let Some(arm) = gen_child_match_arm(
+                    &event_ident,
                     child,
                     &child_choice_enum_type,
                     gen_context,
-                    &mut loop_children_suffix_match_set,
-                )?);
+                    &mut loop_children_ident_set,
+                )? {
+                    loop_children_match_list.push(arm);
+                }
             }
         }
 
@@ -287,7 +282,7 @@ fn gen_schema_type(
         let attr_name_ident = attr.as_name_ident();
 
         field_declaration_list.push(parse_quote! {
-          let mut #attr_name_ident = None;
+            let mut #attr_name_ident = None;
         });
 
         attr_match_list.push(gen_field_match_arm(attr, gen_context)?);
@@ -295,7 +290,7 @@ fn gen_schema_type(
         if attr.is_validator_required() {
             field_unwrap_list.push(parse_quote! {
                 let #attr_name_ident = #attr_name_ident
-                  .ok_or_else(|| crate::common::SdkError::CommonError(#attr_name_str.to_string()))?;
+                    .ok_or_else(|| SdkError::CommonError(#attr_name_str.to_string()))?;
             })
         }
 
@@ -303,58 +298,38 @@ fn gen_schema_type(
     }
 
     let mut expect_event_start_stmt: Stmt = parse_quote! {
-        let (e, empty_tag) =
-            crate::common::expect_event_start(xml_reader, xml_event, #type_prefixed_name_literal, #type_name_literal)?;
+        let (#event_ident, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
     };
 
-    let attr_match_stmt_opt: Option<Stmt> = if (schema_type.base_class == "OpenXmlCompositeElement"
-        || schema_type.base_class == "CustomXmlElement"
-        || schema_type.base_class == "OpenXmlPartRootElement"
-        || schema_type.base_class == "SdtElement")
-        && (!schema_type.part.is_empty()
-            || schema_type.base_class == "OpenXmlPartRootElement"
-            || schema_namespace.uri == "http://schemas.openxmlformats.org/drawingml/2006/main"
-            || schema_namespace.uri == "http://schemas.openxmlformats.org/drawingml/2006/picture")
-    {
+    let attr_match_stmt_opt: Option<Stmt> = if schema.needs_xmlns(schema_type) {
         Some(parse_quote! {
-            for attr in e.attributes().with_checks(false) {
-                let attr = attr.map_err(crate::common::SdkError::from)?;
+            for attr in #event_ident.attributes().with_checks(false) {
+                let attr = attr.map_err(SdkError::from)?;
+                if xmlns.deserialize_attributes(xml_reader, &attr)?.is_some() {
+                    continue;
+                }
 
-                match attr.key.as_ref() {
+                match attr.key.0 {
                     #( #attr_match_list )*
-                    b"xmlns" => {
-                        xmlns = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
-                    }
-                    b"mc:Ignorable" => {
-                        mc_ignorable = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
-                    }
-                    key => {
-                        if let Some(xmlns_key) = key.strip_prefix(b"xmlns:") {
-                            xmlns_map.insert(
-                                String::from_utf8_lossy(xmlns_key).to_string(),
-                                attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned(),
-                            );
-                        }
-                    }
+                    _ => {}
                 }
             }
         })
     } else if !attr_match_list.is_empty() {
         Some(parse_quote! {
-          for attr in e.attributes().with_checks(false) {
-            let attr = attr.map_err(crate::common::SdkError::from)?;
+            for attr in #event_ident.attributes().with_checks(false) {
+                let attr = attr.map_err(SdkError::from)?;
 
-            #[allow(clippy::single_match)]
-            match attr.key.as_ref() {
-              #( #attr_match_list )*
-              _ => {}
+                #[allow(clippy::single_match)]
+                match attr.key.0 {
+                    #( #attr_match_list )*
+                    _ => {}
+                }
             }
-          }
         })
     } else {
         expect_event_start_stmt = parse_quote! {
-          let (_, empty_tag) =
-            crate::common::expect_event_start(xml_reader, xml_event, #type_prefixed_name_literal, #type_name_literal)?;
+            let (_, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
         };
 
         None
@@ -363,52 +338,51 @@ fn gen_schema_type(
     if !loop_children_match_list.is_empty() {
         loop_declaration_list.extend([
             parse_quote! {
-              let mut e_opt = None;
+                let mut e_opt = None;
             },
             parse_quote! {
-              let mut e_empty = false;
+                let mut e_empty = false;
             },
         ]);
 
         loop_match_arm_list.extend([
             parse_quote! {
-              quick_xml::events::Event::Start(e) => {
-                e_opt = Some(e);
-              }
+                quick_xml::events::Event::Start(#event_ident) => {
+                    e_opt = Some(#event_ident);
+                }
             },
             parse_quote! {
-              quick_xml::events::Event::Empty(e) => {
-                e_empty = true;
-                e_opt = Some(e);
-              }
+                quick_xml::events::Event::Empty(#event_ident) => {
+                    e_empty = true;
+                    e_opt = Some(#event_ident);
+                }
             },
         ]);
 
         let schema_type_class_name = schema_type.class_name_ident().to_string();
 
-        //TODO: Strip out the namespace prefix first
         loop_children_stmt_opt = Some(parse_quote! {
-          if let Some(e) = e_opt {
-            match e.name().as_ref() {
-              #( #loop_children_match_list )*
-              _ => {
-                tracing::warn!(
-                  "Skipping non-matching tag: ({}) from schema: ({})",
-                  String::from_utf8_lossy(e.name().as_ref()),
-                  #schema_type_class_name
-                );
-                continue;
-              },
+            if let Some(#event_ident) = e_opt {
+                match #event_ident.name().0 {
+                #( #loop_children_match_list )*
+                _ => {
+                        tracing::warn!(
+                            "Skipping non-matching tag: ({}) from schema: ({})",
+                            String::from_utf8_lossy(#event_ident.name().0),
+                            #schema_type_class_name
+                        );
+                        continue;
+                    },
+                }
             }
-          }
         })
     }
 
     let deserialize_inner_fn: ItemFn = parse_quote! {
       fn deserialize_inner<'de>(
-        xml_reader: &mut impl crate::common::XmlReader<'de>,
+        xml_reader: &mut impl XmlReader<'de>,
         xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-      ) -> Result<Self, crate::common::SdkErrorReport> {
+      ) -> Result<Self, SdkErrorReport> {
         #expect_event_start_stmt
 
         #( #field_declaration_list )*
@@ -420,15 +394,12 @@ fn gen_schema_type(
             #( #loop_declaration_list )*
 
             match xml_reader.next()? {
-              #( #loop_match_arm_list )*
-              quick_xml::events::Event::End(e) => match e.name().as_ref() {
-                #type_prefixed_name_literal | #type_name_literal => {
-                  break;
-                }
+                #( #loop_match_arm_list )*
+                quick_xml::events::Event::End(#event_ident) if Self::matched_name(#event_ident.name().0) => {
+                    break;
+                },
+                quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
                 _ => (),
-              },
-              quick_xml::events::Event::Eof => Err(crate::common::SdkError::UnknownError)?,
-              _ => (),
             }
 
             #loop_children_stmt_opt
@@ -444,7 +415,7 @@ fn gen_schema_type(
     };
 
     return Ok(quote! {
-      impl crate::common::Deserializeable for #struct_type {
+      impl Deserializeable for #struct_type {
         #deserialize_inner_fn
       }
     }
@@ -478,21 +449,21 @@ fn gen_schema_enum(
 
     return Ok(quote! {
       impl std::str::FromStr for #enum_type {
-        type Err = crate::common::SdkErrorReport;
+        type Err = SdkErrorReport;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
           match s {
             #( #variants )*
-            _ => Err(crate::common::SdkError::CommonError(s.to_string()))?,
+            _ => Err(SdkError::CommonError(s.to_string()))?,
           }
         }
       }
 
       impl #enum_type {
-        pub fn from_bytes(b: &[u8]) -> Result<Self, crate::common::SdkErrorReport> {
+        pub fn from_bytes(b: &[u8]) -> Result<Self, SdkErrorReport> {
           match b {
             #( #byte_variants )*
-            other => Err(crate::common::SdkError::CommonError(
+            other => Err(SdkError::CommonError(
               String::from_utf8_lossy(other).into_owned(),
             ))?,
           }
@@ -503,102 +474,66 @@ fn gen_schema_enum(
 }
 
 fn gen_one_sequence_match_arm(
+    event_ident: &Ident,
     schema_type_particle: &OpenXmlSchemaTypeParticle,
     child: &OpenXmlSchemaTypeChild,
     gen_context: &GenContext,
-    loop_children_suffix_match_set: &mut HashSet<String>,
-) -> Result<Arm, BuildErrorReport> {
+    loop_children_ident_set: &mut HashSet<Ident>,
+) -> Result<Option<Arm>, BuildErrorReport> {
     let child_type = gen_context
         .type_name_type_map
         .try_get(child.name.as_str())?;
 
-    let (_, child_prefixed_name) = child.split_name();
-    let (_, child_name) = child.split_last_name();
     let child_property_name_ident = child.as_property_name_ident();
+    let child_property_type = child_type.r#type(false);
 
-    let child_prefixed_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_prefixed_name}\"")).map_err(BuildError::from)?;
-    let child_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_name}\"")).map_err(BuildError::from)?;
+    if !loop_children_ident_set.insert(child_property_name_ident.clone()) {
+        return Ok(None);
+    }
 
-    let child_variant_type = child_type.r#type(false);
-
-    // TODO: Simplify again
-    if loop_children_suffix_match_set.insert(child_name.to_string()) {
-        match schema_type_particle.as_occurrence() {
-            Occurrence::Required | Occurrence::Optional => Ok(parse_quote! {
-                #child_prefixed_name_literal | #child_name_literal => {
-                    #child_property_name_ident = Some(std::boxed::Box::new(
-                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                    ));
-                }
-            }),
-            Occurrence::Repeated => Ok(parse_quote! {
-                #child_prefixed_name_literal | #child_name_literal => {
-                    #child_property_name_ident.push(
-                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                    );
-                }
-            }),
-        }
-    } else {
-        match schema_type_particle.as_occurrence() {
-            Occurrence::Required | Occurrence::Optional => Ok(parse_quote! {
-                #child_prefixed_name_literal => {
-                    #child_property_name_ident = Some(std::boxed::Box::new(
-                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                    ));
-                }
-            }),
-            Occurrence::Repeated => Ok(parse_quote! {
-                #child_prefixed_name_literal => {
-                    #child_property_name_ident.push(
-                        #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                    );
-                }
-            }),
-        }
+    match schema_type_particle.as_occurrence() {
+        Occurrence::Required | Occurrence::Optional => Ok(Some(parse_quote! {
+            _ if #child_property_type::matched_name(#event_ident.name().0) => {
+                #child_property_name_ident = Some(std::boxed::Box::new(
+                    #child_property_type::deserialize_inner(xml_reader, Some((#event_ident, e_empty)))?,
+                ));
+            }
+        })),
+        Occurrence::Repeated => Ok(Some(parse_quote! {
+            _ if #child_property_type::matched_name(#event_ident.name().0) => {
+                #child_property_name_ident.push(
+                    #child_property_type::deserialize_inner(xml_reader, Some((#event_ident, e_empty)))?,
+                );
+            }
+        })),
     }
 }
 
 fn gen_child_match_arm(
+    event_ident: &Ident,
     child: &OpenXmlSchemaTypeChild,
-    child_choice_enum_ident: &Type,
+    child_choice_enum_type: &Type,
     gen_context: &GenContext,
-    loop_children_suffix_match_set: &mut HashSet<String>,
-) -> Result<Arm, BuildErrorReport> {
+    loop_children_ident_set: &mut HashSet<Ident>,
+) -> Result<Option<Arm>, BuildErrorReport> {
     let child_type = gen_context
         .type_name_type_map
         .try_get(child.name.as_str())?;
 
-    let (_, child_prefixed_name) = child.split_name();
-    let (_, child_name) = child.split_last_name();
-
-    let child_prefixed_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_prefixed_name}\"")).map_err(BuildError::from)?;
-    let child_name_literal: LitByteStr =
-        parse_str(&format!("b\"{child_name}\"")).map_err(BuildError::from)?;
-
-    let child_variant_type = child_type.r#type(false);
     let child_variant_name_ident = child.as_last_name_ident();
+    let child_variant_type = child_type.r#type(false);
 
-    if loop_children_suffix_match_set.insert(child_name.to_string()) {
-        return Ok(parse_quote! {
-          #child_prefixed_name_literal | #child_name_literal => {
-            children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
-              #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-            )));
-          }
-        });
-    };
+    if !loop_children_ident_set.insert(child_variant_name_ident.clone()) {
+        return Ok(None);
+    }
 
-    return Ok(parse_quote! {
-      #child_prefixed_name_literal => {
-        children.push(#child_choice_enum_ident::#child_variant_name_ident(std::boxed::Box::new(
-          #child_variant_type::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-        )));
-      }
-    });
+    return Ok(Some(parse_quote! {
+        _ if #child_variant_type::matched_name(#event_ident.name().0) => {
+            children.push(#child_choice_enum_type::#child_variant_name_ident(std::boxed::Box::new(
+                #child_variant_type::deserialize_inner(xml_reader, Some((#event_ident, e_empty)))?,
+            )))
+        }
+    }));
 }
 
 fn gen_simple_child_match_arm(
@@ -609,36 +544,36 @@ fn gen_simple_child_match_arm(
         let simple_type_name = schema_enum.r#type(false);
 
         return Ok(parse_quote! {
-          quick_xml::events::Event::Text(t) => {
-            xml_content = Some(#simple_type_name::from_bytes(&t.into_inner())?);
-          }
+            quick_xml::events::Event::Text(t) => {
+                xml_content = Some(#simple_type_name::from_bytes(&t.into_inner())?);
+            }
         });
     }
 
     let simple_type_str = simple_type_mapping(first_name);
 
-    let r#type: Type = parse_str(&format!("crate::common::simple_type::{simple_type_str}"))
-        .map_err(BuildError::from)?;
+    let r#type: Type =
+        parse_str(&format!("simple_type::{simple_type_str}")).map_err(BuildError::from)?;
 
     return Ok(match simple_type_str {
         "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
         | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
-          quick_xml::events::Event::Text(t) => {
-            xml_content = Some(t.decode().map_err(crate::common::SdkError::from)?.to_string());
-          }
+            quick_xml::events::Event::Text(t) => {
+                xml_content.get_or_insert_with(String::new).push_str(&t.decode().map_err(SdkError::from)?);
+            }
         },
         "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => parse_quote! {
-          quick_xml::events::Event::Text(t) => {
-            xml_content = Some(crate::common::parse_bool_bytes(&t.into_inner())?);
-          }
+            quick_xml::events::Event::Text(t) => {
+                xml_content = Some(parse_bool_bytes(&t.into_inner())?);
+            }
         },
         "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
         | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => parse_quote! {
-          quick_xml::events::Event::Text(t) => {
-            xml_content = Some(
-              t.decode().map_err(crate::common::SdkError::from)?.parse::<#r#type>().map_err(crate::common::SdkError::from)?
-            );
-          }
+            quick_xml::events::Event::Text(t) => {
+                xml_content = Some(
+                    t.decode().map_err(SdkError::from)?.parse::<#r#type>().map_err(SdkError::from)?
+                );
+            }
         },
         _ => unreachable!("{simple_type_str}"),
     });
@@ -660,7 +595,7 @@ fn gen_field_match_arm(
                 #attr_name_literal => {
                     #attr_name_ident = Some(
                         attr.decode_and_unescape_value(xml_reader.decoder())
-                            .map_err(crate::common::SdkError::from)?
+                            .map_err(SdkError::from)?
                             .into_owned()
                     );
                 }
@@ -678,14 +613,14 @@ fn gen_field_match_arm(
             | "IntegerValue" | "SByteValue" | "StringValue" => {
                 return Ok(parse_quote! {
                   #attr_name_literal => {
-                    #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?.into_owned());
+                    #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(SdkError::from)?.into_owned());
                   }
                 });
             }
             "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => {
                 return Ok(parse_quote! {
                   #attr_name_literal => {
-                    #attr_name_ident = Some(crate::common::parse_bool_bytes(&attr.value)?);
+                    #attr_name_ident = Some(parse_bool_bytes(&attr.value)?);
                   }
                 });
             }
@@ -695,8 +630,8 @@ fn gen_field_match_arm(
                   #attr_name_literal => {
                     #attr_name_ident = Some(
                       attr
-                        .decode_and_unescape_value(xml_reader.decoder()).map_err(crate::common::SdkError::from)?
-                        .parse::<#attr_type>().map_err(crate::common::SdkError::from)?,
+                        .decode_and_unescape_value(xml_reader.decoder()).map_err(SdkError::from)?
+                        .parse::<#attr_type>().map_err(SdkError::from)?,
                     );
                   }
                 });
