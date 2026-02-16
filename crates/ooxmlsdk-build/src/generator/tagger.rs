@@ -43,7 +43,7 @@ fn gen_schema_type(
     let type_items: &[ItemConst] = match type_prefix {
         "op" => &[],
         prefix => {
-            let prefixed_name = Literal::string(&format!("{type_name}:{type_prefix}"));
+            let prefixed_name = Literal::string(&format!("{type_prefix}:{type_name}"));
             let prefix = Literal::string(prefix);
 
             &[
