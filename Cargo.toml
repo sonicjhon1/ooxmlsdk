@@ -29,7 +29,7 @@ syn = "2.0.116"
 tempfile = "3.25"
 thiserror = "2.0"
 tracing = "0.1"
-zip = { version = "8.0", default-features = false, features = ["deflate"] }
+zip = { version = "8.1", default-features = false, features = ["deflate"] }
 
 [workspace.lints.clippy]
 needless_return = "allow"
@@ -73,6 +73,10 @@ rootcause = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 zip = { workspace = true, optional = true }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+rootcause-backtrace = { version = "0.12" }
 
 [build-dependencies]
 ooxmlsdk-build = { workspace = true }

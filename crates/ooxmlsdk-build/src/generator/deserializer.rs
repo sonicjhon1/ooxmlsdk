@@ -18,6 +18,7 @@ pub fn gen_deserializers(
 
     if !schema.types.is_empty() || !schema.enums.is_empty() {
         contents.push_str(&gen_use_common_glob().to_string());
+        contents.push_str("use rootcause::prelude::*;");
     }
 
     contents.push_str(
@@ -348,11 +349,13 @@ fn gen_schema_type(
         loop_match_arm_list.extend([
             parse_quote! {
                 quick_xml::events::Event::Start(#event_ident) => {
+                    tracing::debug!("Matched Start: ({})", Self::prefixed_name_or_name());
                     e_opt = Some(#event_ident);
                 }
             },
             parse_quote! {
                 quick_xml::events::Event::Empty(#event_ident) => {
+                    tracing::debug!("Matched Empty: ({})", Self::prefixed_name_or_name());
                     e_empty = true;
                     e_opt = Some(#event_ident);
                 }
@@ -393,12 +396,15 @@ fn gen_schema_type(
           loop {
             #( #loop_declaration_list )*
 
-            match xml_reader.next()? {
+            match xml_reader.next().attach_with(|| format!("Failed to call next: ({})", Self::prefixed_name_or_name()))? {
                 #( #loop_match_arm_list )*
                 quick_xml::events::Event::End(#event_ident) if Self::matched_name(#event_ident.name().0) => {
+                    tracing::debug!("Matched End: ({})", Self::prefixed_name_or_name());
                     break;
                 },
-                quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
+                quick_xml::events::Event::Eof => Err(SdkError::UnknownError).attach_with(
+                    || format!("Reached EOF early: ({})", Self::prefixed_name_or_name())
+                )?,
                 _ => (),
             }
 
