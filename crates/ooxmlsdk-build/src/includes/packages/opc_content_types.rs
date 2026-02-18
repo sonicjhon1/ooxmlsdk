@@ -21,58 +21,65 @@ impl Taggable for Types {
 }
 
 impl Deserializeable for Types {
-    fn deserialize_inner<'de>(
-        xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(BytesStart<'de>, bool)>,
+    fn deserialize_attributes<'de>(
+        mut self,
+        xml_reader: &impl XmlReader<'de>,
+        xml_event: BytesStart<'de>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
-
         let mut xmlns = XmlNamespace::default();
 
-        let mut children = vec![];
-
-        for attr in e.attributes().with_checks(false) {
+        for attr in xml_event.attributes().with_checks(false) {
             let attr = attr.map_err(SdkError::from)?;
             let _ = xmlns.deserialize_attributes(xml_reader, &attr)?;
         }
 
-        if !empty_tag {
-            loop {
-                let mut e_opt: Option<BytesStart<'_>> = None;
-                let mut e_empty = false;
+        self.xmlns = xmlns;
 
-                match xml_reader.next()? {
-                    quick_xml::events::Event::Start(e) => {
-                        e_opt = Some(e);
+        Ok(self)
+    }
+
+    fn deserialize_children<'de>(
+        mut self,
+        xml_reader: &mut impl XmlReader<'de>,
+    ) -> Result<Self, SdkErrorReport> {
+        let mut children = vec![];
+
+        loop {
+            match BytesEvent::expect(xml_reader)? {
+                BytesEvent::BytesStart(bytes_start, is_empty)
+                    if Default::matched_bytes_start(&bytes_start) =>
+                {
+                    let mut child =
+                        Default::default().deserialize_attributes(xml_reader, bytes_start)?;
+
+                    if !is_empty {
+                        child = child.deserialize_children(xml_reader)?;
                     }
-                    quick_xml::events::Event::Empty(e) => {
-                        e_empty = true;
-                        e_opt = Some(e);
-                    }
-                    quick_xml::events::Event::End(e) if Self::matched_name(e.name().0) => {
-                        break;
-                    }
-                    quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
-                    _ => (),
+
+                    children.push(TypesChildChoice::Default(std::boxed::Box::new(child)))
                 }
+                BytesEvent::BytesStart(bytes_start, is_empty)
+                    if Override::matched_bytes_start(&bytes_start) =>
+                {
+                    let mut child =
+                        Override::default().deserialize_attributes(xml_reader, bytes_start)?;
 
-                if let Some(e) = e_opt {
-                    let event_name = e.name().0;
-
-                    if Default::matched_name(event_name) {
-                        children.push(TypesChildChoice::Default(std::boxed::Box::new(
-                            Default::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                        )))
-                    } else if Override::matched_name(event_name) {
-                        children.push(TypesChildChoice::Override(std::boxed::Box::new(
-                            Override::deserialize_inner(xml_reader, Some((e, e_empty)))?,
-                        )));
+                    if !is_empty {
+                        child = child.deserialize_children(xml_reader)?;
                     }
+
+                    children.push(TypesChildChoice::Override(std::boxed::Box::new(child)))
+                }
+                BytesEvent::End(bytes_end) if Self::matched_bytes_end(&bytes_end) => break,
+                other => {
+                    tracing::warn!("Unhandled event: ({other:?}) from schema: (Types)");
                 }
             }
         }
 
-        Ok(Self { xmlns, children })
+        self.children = children;
+
+        Ok(self)
     }
 }
 
@@ -111,19 +118,18 @@ impl Taggable for Default {
 }
 
 impl Deserializeable for Default {
-    fn deserialize_inner<'de>(
-        xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(BytesStart<'de>, bool)>,
+    fn deserialize_attributes<'de>(
+        mut self,
+        xml_reader: &impl XmlReader<'de>,
+        xml_event: BytesStart<'de>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start::<Self>(xml_reader, xml_event)?;
-
         let mut extension = None;
         let mut content_type = None;
 
-        for attr in e.attributes().with_checks(false) {
+        for attr in xml_event.attributes().with_checks(false) {
             let attr = attr.map_err(SdkError::from)?;
 
-            match attr.key.as_ref() {
+            match attr.key.0 {
                 b"Extension" => {
                     extension = Some(
                         attr.decode_and_unescape_value(xml_reader.decoder())
@@ -142,16 +148,12 @@ impl Deserializeable for Default {
             }
         }
 
-        let extension =
+        self.extension =
             extension.context_with(|| SdkError::CommonError("extension".to_string()))?;
-
-        let content_type =
+        self.content_type =
             content_type.context_with(|| SdkError::CommonError("content_type".to_string()))?;
 
-        Ok(Self {
-            extension,
-            content_type,
-        })
+        Ok(self)
     }
 }
 
@@ -180,16 +182,15 @@ impl Taggable for Override {
 }
 
 impl Deserializeable for Override {
-    fn deserialize_inner<'de>(
-        xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(BytesStart<'de>, bool)>,
+    fn deserialize_attributes<'de>(
+        mut self,
+        xml_reader: &impl XmlReader<'de>,
+        xml_event: BytesStart<'de>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start::<Self>(xml_reader, xml_event)?;
-
         let mut content_type = None;
         let mut part_name = None;
 
-        for attr in e.attributes().with_checks(false) {
+        for attr in xml_event.attributes().with_checks(false) {
             let attr = attr.map_err(SdkError::from)?;
 
             match attr.key.as_ref() {
@@ -211,16 +212,13 @@ impl Deserializeable for Override {
             }
         }
 
-        let content_type =
+        self.content_type =
             content_type.context_with(|| SdkError::CommonError("content_type".to_string()))?;
 
-        let part_name =
+        self.part_name =
             part_name.context_with(|| SdkError::CommonError("part_name".to_string()))?;
 
-        Ok(Self {
-            content_type,
-            part_name,
-        })
+        Ok(self)
     }
 }
 

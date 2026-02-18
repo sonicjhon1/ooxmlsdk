@@ -1,6 +1,6 @@
 use super::super::common::*;
 use quick_xml::events::BytesStart;
-use rootcause::{option_ext::OptionExt, prelude::ResultExt};
+use rootcause::option_ext::OptionExt;
 
 #[derive(Clone, Debug, Default)]
 pub struct Relationships {
@@ -13,59 +13,53 @@ impl Taggable for Relationships {
 }
 
 impl Deserializeable for Relationships {
-    fn deserialize_inner<'de>(
-        xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(BytesStart<'de>, bool)>,
+    fn deserialize_attributes<'de>(
+        mut self,
+        xml_reader: &impl XmlReader<'de>,
+        xml_event: BytesStart<'de>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
-
         let mut xmlns = XmlNamespace::default();
 
-        let mut relationship = vec![];
-
-        for attr in e.attributes() {
+        for attr in xml_event.attributes() {
             let attr = attr.map_err(SdkError::from)?;
             let _ = xmlns.deserialize_attributes(xml_reader, &attr)?;
         }
 
-        if !empty_tag {
-            loop {
-                let mut e_opt: Option<BytesStart<'_>> = None;
-                let mut e_empty = false;
+        self.xmlns = xmlns;
 
-                match xml_reader.next()? {
-                    quick_xml::events::Event::Start(e) => {
-                        e_opt = Some(e);
+        Ok(self)
+    }
+
+    fn deserialize_children<'de>(
+        mut self,
+        xml_reader: &mut impl XmlReader<'de>,
+    ) -> Result<Self, SdkErrorReport> {
+        let mut relationship = vec![];
+
+        loop {
+            match BytesEvent::expect(xml_reader)? {
+                BytesEvent::BytesStart(bytes_start, is_empty)
+                    if Relationship::matched_bytes_start(&bytes_start) =>
+                {
+                    let mut child =
+                        Relationship::default().deserialize_attributes(xml_reader, bytes_start)?;
+
+                    if !is_empty {
+                        child = child.deserialize_children(xml_reader)?;
                     }
-                    quick_xml::events::Event::Empty(e) => {
-                        e_empty = true;
-                        e_opt = Some(e);
-                    }
-                    quick_xml::events::Event::End(e) if Self::matched_name(e.name().0) => {
-                        break;
-                    }
-                    quick_xml::events::Event::Eof => Err(SdkError::UnknownError)?,
-                    _ => (),
+
+                    relationship.push(child);
                 }
-
-                if let Some(e) = e_opt {
-                    if Relationship::matched_name(e.name().0) {
-                        relationship.push(Relationship::deserialize_inner(
-                            xml_reader,
-                            Some((e, e_empty)),
-                        )?);
-                    } else {
-                        return Err(SdkError::CommonError("Types".to_string()))
-                            .attach(String::from_utf8_lossy(e.name().into_inner()).to_string())?;
-                    }
+                BytesEvent::End(bytes_end) if Self::matched_bytes_end(&bytes_end) => break,
+                other => {
+                    tracing::warn!("Unhandled event: ({other:?}) from schema: (Relationships)");
                 }
             }
         }
 
-        Ok(Self {
-            xmlns,
-            relationship,
-        })
+        self.relationship = relationship;
+
+        Ok(self)
     }
 }
 
@@ -98,21 +92,17 @@ impl Taggable for Relationship {
 }
 
 impl Deserializeable for Relationship {
-    fn deserialize_inner<'de>(
-        xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(BytesStart<'de>, bool)>,
+    fn deserialize_attributes<'de>(
+        mut self,
+        xml_reader: &impl XmlReader<'de>,
+        xml_event: BytesStart<'de>,
     ) -> Result<Self, SdkErrorReport> {
-        let (e, _) = expect_event_start::<Self>(xml_reader, xml_event)?;
-
         let mut target_mode = None;
-
         let mut target = None;
-
         let mut r#type = None;
-
         let mut id = None;
 
-        for attr in e.attributes().with_checks(false) {
+        for attr in xml_event.attributes().with_checks(false) {
             let attr = attr.map_err(SdkError::from)?;
 
             match attr.key.as_ref() {
@@ -148,18 +138,12 @@ impl Deserializeable for Relationship {
             }
         }
 
-        let target = target.context_with(|| SdkError::CommonError("target".to_string()))?;
+        self.target_mode = target_mode;
+        self.target = target.context_with(|| SdkError::CommonError("target".to_string()))?;
+        self.r#type = r#type.context_with(|| SdkError::CommonError("type".to_string()))?;
+        self.id = id.context_with(|| SdkError::CommonError("id".to_string()))?;
 
-        let r#type = r#type.context_with(|| SdkError::CommonError("type".to_string()))?;
-
-        let id = id.context_with(|| SdkError::CommonError("id".to_string()))?;
-
-        Ok(Self {
-            target_mode,
-            target,
-            r#type,
-            id,
-        })
+        Ok(self)
     }
 }
 

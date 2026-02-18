@@ -1,3 +1,4 @@
+use proc_macro2::Literal;
 use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashSet;
@@ -19,6 +20,7 @@ pub fn gen_deserializers(
     if !schema.types.is_empty() || !schema.enums.is_empty() {
         contents.push_str(&gen_use_common_glob().to_string());
         contents.push_str("use rootcause::prelude::*;");
+        contents.push_str("use rootcause::option_ext::OptionExt;");
     }
 
     contents.push_str(
@@ -53,379 +55,182 @@ fn gen_schema_type(
 
     let struct_type = schema.struct_type(schema_type);
 
-    let (type_base_class, _) = schema_type.split_name();
+    let deserialize_attributes_fn =
+        gen_deserialize_attributes_fn(schema, schema_type, gen_context)?;
 
-    let event_ident = format_ident!("xml_bytes");
+    let deserialize_children_fn = gen_deserialize_children_fn(schema, schema_type, gen_context)?;
 
-    let mut field_declaration_list: Vec<Stmt> = vec![];
-    let mut attr_match_list: Vec<Arm> = vec![];
-    let mut field_unwrap_list: Vec<Stmt> = vec![];
-    let mut field_ident_list: Vec<Ident> = vec![];
-    let mut loop_declaration_list: Vec<Stmt> = vec![];
-    let mut loop_children_stmt_opt: Option<Stmt> = None;
-    let mut loop_match_arm_list: Vec<Arm> = vec![];
+    return Ok(quote! {
+        impl Deserializeable for #struct_type {
+            #deserialize_attributes_fn
 
-    let mut loop_children_match_list: Vec<Arm> = vec![];
-    let mut loop_children_ident_set: HashSet<Ident> = HashSet::new();
-
-    let mut attributes: Vec<&OpenXmlSchemaTypeAttribute> = vec![];
-
-    let child_map = schema_type.child_map();
-
-    if schema.needs_xmlns(schema_type) {
-        field_declaration_list.push(parse_quote! {
-          let mut xmlns = XmlNamespace::default();
-        });
-
-        field_ident_list.push(format_ident!("xmlns"));
+            #deserialize_children_fn
+        }
     }
+    .to_string());
+}
 
-    if schema_type.base_class == "OpenXmlLeafTextElement" {
-        for attr in &schema_type.attributes {
-            attributes.push(attr);
-        }
+fn gen_deserialize_attributes_fn(
+    schema: &OpenXmlSchema,
+    schema_type: &OpenXmlSchemaType,
+    gen_context: &GenContext,
+) -> Result<Option<ItemFn>, BuildErrorReport> {
+    let schema_type_class_name = schema_type.class_name_ident().to_string();
 
-        field_declaration_list.push(parse_quote! {
-          let mut xml_content = None;
-        });
+    let xml_reader_ident = format_ident!("_xml_reader");
+    let xml_event_ident = format_ident!("_xml_event");
+    let attr_ident = format_ident!("attr");
 
-        field_ident_list.push(format_ident!("xml_content"));
+    let mut declarations = vec![];
+    let mut matchers = vec![];
+    let mut reassignments = vec![];
 
-        loop_match_arm_list.push(gen_simple_child_match_arm(type_base_class, gen_context)?);
-    } else if schema_type.base_class == "OpenXmlLeafElement" {
-        for attr in &schema_type.attributes {
-            attributes.push(attr);
-        }
-    } else if schema_type.base_class == "OpenXmlCompositeElement"
+    if schema_type.base_class == "OpenXmlLeafTextElement"
+        || schema_type.base_class == "OpenXmlLeafElement"
+        || schema_type.base_class == "OpenXmlCompositeElement"
         || schema_type.base_class == "CustomXmlElement"
         || schema_type.base_class == "OpenXmlPartRootElement"
         || schema_type.base_class == "SdtElement"
     {
-        for attr in &schema_type.attributes {
-            attributes.push(attr);
-        }
+        for schema_type_attribute in &schema_type.attributes {
+            let t = TypeDeserializer::from_open_xml_schema_type_attribute(
+                schema_type_attribute,
+                &xml_reader_ident,
+                &attr_ident,
+                gen_context,
+            )?;
 
-        if schema_type.is_one_sequence_flatten() {
-            for schema_type_particle in &schema_type.particle.items {
-                let child = child_map.try_get(schema_type_particle.name.as_str())?;
-
-                let child_property_name_str = child.as_property_name_str();
-                let child_property_name_ident = child.as_property_name_ident();
-
-                match schema_type_particle.as_occurrence() {
-                    Occurrence::Required => {
-                        field_declaration_list.push(parse_quote! {
-                            let mut #child_property_name_ident = None;
-                        });
-
-                        field_unwrap_list.push(parse_quote! {
-                            let #child_property_name_ident = #child_property_name_ident
-                                .ok_or_else(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
-                        });
-                    }
-                    Occurrence::Optional => {
-                        field_declaration_list.push(parse_quote! {
-                            let mut #child_property_name_ident = None;
-                        });
-                    }
-                    Occurrence::Repeated => {
-                        field_declaration_list.push(parse_quote! {
-                            let mut #child_property_name_ident = vec![];
-                        });
-                    }
-                };
-
-                field_ident_list.push(child_property_name_ident);
-
-                if let Some(arm) = gen_one_sequence_match_arm(
-                    &event_ident,
-                    schema_type_particle,
-                    child,
-                    gen_context,
-                    &mut loop_children_ident_set,
-                )? {
-                    loop_children_match_list.push(arm);
-                }
-            }
-        } else {
-            if !schema_type.children.is_empty() {
-                field_declaration_list.push(parse_quote! {
-                  let mut children = vec![];
-                });
-
-                field_ident_list.push(parse_quote! {
-                  children
-                });
-            }
-
-            let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
-
-            for child in &schema_type.children {
-                if let Some(arm) = gen_child_match_arm(
-                    &event_ident,
-                    child,
-                    &child_choice_enum_type,
-                    gen_context,
-                    &mut loop_children_ident_set,
-                )? {
-                    loop_children_match_list.push(arm);
-                }
-            }
+            declarations.push(t.declaration);
+            matchers.extend(t.matchers);
+            reassignments.push(t.reassignment);
         }
     } else if schema_type.is_derived {
+        let (type_base_class, _) = schema_type.split_name();
+
         let base_class_type = gen_context
             .type_name_type_map
             .try_get(format!("{type_base_class}/").as_str())?;
 
-        for attr in &schema_type.attributes {
-            attributes.push(attr);
-        }
-
-        for attr in &base_class_type.attributes {
-            attributes.push(attr);
-        }
-
-        if schema_type.is_one_sequence_flatten()
-            && base_class_type.composite_type == Some(CompositeType::OneSequence)
+        for schema_type_attribute in base_class_type
+            .attributes
+            .iter()
+            .chain(schema_type.attributes.iter())
         {
-            for schema_type_particle in &schema_type.particle.items {
-                let child = child_map.try_get(schema_type_particle.name.as_str())?;
+            let t = TypeDeserializer::from_open_xml_schema_type_attribute(
+                schema_type_attribute,
+                &xml_reader_ident,
+                &attr_ident,
+                gen_context,
+            )?;
 
-                let child_property_name_str = child.as_property_name_str();
-                let child_property_name_ident = child.as_property_name_ident();
-
-                match schema_type_particle.as_occurrence() {
-                    Occurrence::Required => {
-                        field_declaration_list.push(parse_quote! {
-                            let mut #child_property_name_ident = None;
-                        });
-
-                        field_unwrap_list.push(parse_quote! {
-                            let #child_property_name_ident = #child_property_name_ident
-                                .ok_or_else(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
-                        });
-                    }
-                    Occurrence::Optional => {
-                        field_declaration_list.push(parse_quote! {
-                            let mut #child_property_name_ident = None;
-                        });
-                    }
-                    Occurrence::Repeated => {
-                        field_declaration_list.push(parse_quote! {
-                            let mut #child_property_name_ident = vec![];
-                        });
-                    }
-                }
-
-                field_ident_list.push(child_property_name_ident);
-            }
-        } else if !schema_type.children.is_empty() {
-            field_declaration_list.push(parse_quote! {
-              let mut children = vec![];
-            });
-
-            field_ident_list.push(parse_quote! {
-              children
-            });
-        } else if base_class_type.base_class == "OpenXmlLeafTextElement" {
-            field_declaration_list.push(parse_quote! {
-              let mut xml_content = None;
-            });
-
-            field_ident_list.push(parse_quote! {
-              xml_content
-            });
+            declarations.push(t.declaration);
+            matchers.extend(t.matchers);
+            reassignments.push(t.reassignment);
         }
-
-        if schema_type.is_one_sequence_flatten()
-            && base_class_type.composite_type == Some(CompositeType::OneSequence)
-        {
-            for schema_type_particle in &schema_type.particle.items {
-                let child = child_map.try_get(schema_type_particle.name.as_str())?;
-
-                if let Some(arm) = gen_one_sequence_match_arm(
-                    &event_ident,
-                    schema_type_particle,
-                    child,
-                    gen_context,
-                    &mut loop_children_ident_set,
-                )? {
-                    loop_children_match_list.push(arm);
-                }
-            }
-        } else {
-            let child_choice_enum_type = schema.enum_child_choice_type(schema_type);
-
-            for child in &schema_type.children {
-                if let Some(arm) = gen_child_match_arm(
-                    &event_ident,
-                    child,
-                    &child_choice_enum_type,
-                    gen_context,
-                    &mut loop_children_ident_set,
-                )? {
-                    loop_children_match_list.push(arm);
-                }
-            }
-        }
-
-        if schema_type.children.is_empty() && base_class_type.base_class == "OpenXmlLeafTextElement"
-        {
-            let base_first_name = base_class_type.split_name().0;
-            loop_match_arm_list.push(gen_simple_child_match_arm(base_first_name, gen_context)?);
-        }
-    } else {
-        panic!("{schema_type:?}");
     };
 
-    for attr in &attributes {
-        let attr_name_str = attr.as_name_str();
-        let attr_name_ident = attr.as_name_ident();
+    if schema.needs_xmlns(schema_type) {
+        let t = TypeDeserializer::xmlns(&xml_reader_ident, &attr_ident);
 
-        field_declaration_list.push(parse_quote! {
-            let mut #attr_name_ident = None;
-        });
-
-        attr_match_list.push(gen_field_match_arm(attr, gen_context)?);
-
-        if attr.is_validator_required() {
-            field_unwrap_list.push(parse_quote! {
-                let #attr_name_ident = #attr_name_ident
-                    .ok_or_else(|| SdkError::CommonError(#attr_name_str.to_string()))?;
-            })
-        }
-
-        field_ident_list.push(attr_name_ident);
+        declarations.push(t.declaration);
+        matchers.extend(t.matchers);
+        reassignments.push(t.reassignment);
     }
 
-    let mut expect_event_start_stmt: Stmt = parse_quote! {
-        let (#event_ident, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
-    };
+    if declarations.is_empty() {
+        return Ok(None);
+    }
 
-    let attr_match_stmt_opt: Option<Stmt> = if schema.needs_xmlns(schema_type) {
-        Some(parse_quote! {
-            for attr in #event_ident.attributes().with_checks(false) {
-                let attr = attr.map_err(SdkError::from)?;
-                if xmlns.deserialize_attributes(xml_reader, &attr)?.is_some() {
-                    continue;
-                }
+    Ok(Some(parse_quote!(
+        fn deserialize_attributes<'de>(
+            mut self,
+            #xml_reader_ident: &impl XmlReader<'de>,
+            #xml_event_ident: quick_xml::events::BytesStart<'de>,
+        ) -> Result<Self, SdkErrorReport> {
+            #( #declarations )*
 
-                match attr.key.0 {
-                    #( #attr_match_list )*
-                    _ => {}
-                }
-            }
-        })
-    } else if !attr_match_list.is_empty() {
-        Some(parse_quote! {
-            for attr in #event_ident.attributes().with_checks(false) {
-                let attr = attr.map_err(SdkError::from)?;
+            for #attr_ident in #xml_event_ident.attributes().with_checks(false) {
+                let #attr_ident = #attr_ident.map_err(SdkError::from)?;
 
                 #[allow(clippy::single_match)]
-                match attr.key.0 {
-                    #( #attr_match_list )*
-                    _ => {}
-                }
-            }
-        })
-    } else {
-        expect_event_start_stmt = parse_quote! {
-            let (_, empty_tag) = expect_event_start::<Self>(xml_reader, xml_event)?;
-        };
-
-        None
-    };
-
-    if !loop_children_match_list.is_empty() {
-        loop_declaration_list.extend([
-            parse_quote! {
-                let mut e_opt = None;
-            },
-            parse_quote! {
-                let mut e_empty = false;
-            },
-        ]);
-
-        loop_match_arm_list.extend([
-            parse_quote! {
-                quick_xml::events::Event::Start(#event_ident) => {
-                    tracing::debug!("Matched Start: ({})", Self::prefixed_name_or_name());
-                    e_opt = Some(#event_ident);
-                }
-            },
-            parse_quote! {
-                quick_xml::events::Event::Empty(#event_ident) => {
-                    tracing::debug!("Matched Empty: ({})", Self::prefixed_name_or_name());
-                    e_empty = true;
-                    e_opt = Some(#event_ident);
-                }
-            },
-        ]);
-
-        let schema_type_class_name = schema_type.class_name_ident().to_string();
-
-        loop_children_stmt_opt = Some(parse_quote! {
-            if let Some(#event_ident) = e_opt {
-                match #event_ident.name().0 {
-                #( #loop_children_match_list )*
-                _ => {
+                match #attr_ident.key.0 {
+                    #( #matchers )*
+                    other => {
                         tracing::warn!(
-                            "Skipping non-matching tag: ({}) from schema: ({})",
-                            String::from_utf8_lossy(#event_ident.name().0),
+                            "Unhandled attribute: ({}) from schema: ({})",
+                            String::from_utf8_lossy(other),
                             #schema_type_class_name
                         );
-                        continue;
-                    },
+                    }
                 }
             }
-        })
+
+            #( #reassignments )*
+
+            Ok(self)
+        }
+    )))
+}
+
+fn gen_deserialize_children_fn(
+    schema: &OpenXmlSchema,
+    schema_type: &OpenXmlSchemaType,
+    gen_context: &GenContext,
+) -> Result<Option<ItemFn>, BuildErrorReport> {
+    let schema_type_class_name = schema_type.class_name_ident().to_string();
+    let mut children_ident_set: HashSet<Ident> = HashSet::new();
+
+    let xml_reader_ident = format_ident!("xml_reader");
+
+    let mut declarations = vec![];
+    let mut matchers = vec![];
+    let mut reassignments = vec![];
+
+    TypeDeserializer::from_schema_type(
+        schema_type,
+        schema,
+        &xml_reader_ident,
+        &mut children_ident_set,
+        gen_context,
+    )?
+    .into_iter()
+    .for_each(|t| {
+        declarations.push(t.declaration);
+        matchers.extend(t.matchers);
+        reassignments.push(t.reassignment);
+    });
+
+    if declarations.is_empty() {
+        return Ok(None);
     }
 
-    let deserialize_inner_fn: ItemFn = parse_quote! {
-      fn deserialize_inner<'de>(
-        xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(quick_xml::events::BytesStart<'de>, bool)>,
-      ) -> Result<Self, SdkErrorReport> {
-        #expect_event_start_stmt
+    return Ok(Some(parse_quote! {
+        fn deserialize_children<'de>(
+            mut self,
+            #xml_reader_ident: &mut impl XmlReader<'de>,
+        ) -> Result<Self, SdkErrorReport> {
+            #( #declarations )*
 
-        #( #field_declaration_list )*
-
-        #attr_match_stmt_opt
-
-        if !empty_tag {
-          loop {
-            #( #loop_declaration_list )*
-
-            match xml_reader.next().attach_with(|| format!("Failed to call next: ({})", Self::prefixed_name_or_name()))? {
-                #( #loop_match_arm_list )*
-                quick_xml::events::Event::End(#event_ident) if Self::matched_name(#event_ident.name().0) => {
-                    tracing::debug!("Matched End: ({})", Self::prefixed_name_or_name());
-                    break;
-                },
-                quick_xml::events::Event::Eof => Err(SdkError::UnknownError).attach_with(
-                    || format!("Reached EOF early: ({})", Self::prefixed_name_or_name())
-                )?,
-                _ => (),
+            loop {
+                match BytesEvent::expect(#xml_reader_ident)? {
+                    #( #matchers )*
+                    BytesEvent::End(bytes_end) if Self::matched_bytes_end(&bytes_end) => {
+                        break;
+                    }
+                    other => {
+                        tracing::warn!(
+                            "Unhandled event: ({other:?}) from schema: ({})",
+                            #schema_type_class_name
+                        );
+                    }
+                }
             }
 
-            #loop_children_stmt_opt
-          }
+            #( #reassignments )*
+
+            Ok(self)
         }
-
-        #( #field_unwrap_list )*
-
-        Ok(Self {
-          #( #field_ident_list, )*
-        })
-      }
-    };
-
-    return Ok(quote! {
-      impl Deserializeable for #struct_type {
-        #deserialize_inner_fn
-      }
-    }
-    .to_string());
+    }));
 }
 
 fn gen_schema_enum(
@@ -454,44 +259,42 @@ fn gen_schema_enum(
     }
 
     return Ok(quote! {
-      impl std::str::FromStr for #enum_type {
-        type Err = SdkErrorReport;
+        impl std::str::FromStr for #enum_type {
+            type Err = SdkErrorReport;
 
-        fn from_str(s: &str) -> Result<Self, Self::Err> {
-          match s {
-            #( #variants )*
-            _ => Err(SdkError::CommonError(s.to_string()))?,
-          }
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Self::try_from(s.as_bytes())
+            }
         }
-      }
 
-      impl #enum_type {
-        pub fn from_bytes(b: &[u8]) -> Result<Self, SdkErrorReport> {
-          match b {
-            #( #byte_variants )*
-            other => Err(SdkError::CommonError(
-              String::from_utf8_lossy(other).into_owned(),
-            ))?,
-          }
+        impl TryFrom<&[u8]> for #enum_type {
+            type Error = SdkErrorReport;
+
+            fn try_from(b: &[u8]) -> Result<Self, <Self as TryFrom<&[u8]>>::Error> {
+                match b {
+                    #( #byte_variants )*
+                    other => Err(SdkError::CommonError(
+                        String::from_utf8_lossy(other).into_owned(),
+                    ))?,
+                }
+            }
         }
-      }
     }
     .to_string());
 }
 
 fn gen_one_sequence_match_arm(
-    event_ident: &Ident,
+    schema_type_child: &OpenXmlSchemaTypeChild,
     schema_type_particle: &OpenXmlSchemaTypeParticle,
-    child: &OpenXmlSchemaTypeChild,
-    gen_context: &GenContext,
+    xml_reader_ident: &Ident,
     loop_children_ident_set: &mut HashSet<Ident>,
+    gen_context: &GenContext,
 ) -> Result<Option<Arm>, BuildErrorReport> {
-    let child_type = gen_context
+    let child_property_schema_type = gen_context
         .type_name_type_map
-        .try_get(child.name.as_str())?;
-
-    let child_property_name_ident = child.as_property_name_ident();
-    let child_property_type = child_type.r#type(false);
+        .try_get(schema_type_child.name.as_str())?;
+    let child_property_name_ident = schema_type_child.as_property_name_ident();
+    let child_property_type = child_property_schema_type.r#type(false);
 
     if !loop_children_ident_set.insert(child_property_name_ident.clone()) {
         return Ok(None);
@@ -499,45 +302,56 @@ fn gen_one_sequence_match_arm(
 
     match schema_type_particle.as_occurrence() {
         Occurrence::Required | Occurrence::Optional => Ok(Some(parse_quote! {
-            _ if #child_property_type::matched_name(#event_ident.name().0) => {
-                #child_property_name_ident = Some(std::boxed::Box::new(
-                    #child_property_type::deserialize_inner(xml_reader, Some((#event_ident, e_empty)))?,
-                ));
+            BytesEvent::BytesStart(bytes_start, is_empty) if #child_property_type::matched_bytes_start(&bytes_start) => {
+                let mut child = #child_property_type::default().deserialize_attributes(#xml_reader_ident, bytes_start)?;
+
+                if !is_empty {
+                    child = child.deserialize_children(#xml_reader_ident)?;
+                }
+
+                #child_property_name_ident = Some(std::boxed::Box::new(child));
             }
         })),
         Occurrence::Repeated => Ok(Some(parse_quote! {
-            _ if #child_property_type::matched_name(#event_ident.name().0) => {
-                #child_property_name_ident.push(
-                    #child_property_type::deserialize_inner(xml_reader, Some((#event_ident, e_empty)))?,
-                );
+            BytesEvent::BytesStart(bytes_start, is_empty) if #child_property_type::matched_bytes_start(&bytes_start) => {
+                let mut child = #child_property_type::default().deserialize_attributes(#xml_reader_ident, bytes_start)?;
+
+                if !is_empty {
+                    child = child.deserialize_children(#xml_reader_ident)?;
+                }
+
+                #child_property_name_ident.push(child);
             }
         })),
     }
 }
 
 fn gen_child_match_arm(
-    event_ident: &Ident,
-    child: &OpenXmlSchemaTypeChild,
-    child_choice_enum_type: &Type,
-    gen_context: &GenContext,
+    schema_type_child: &OpenXmlSchemaTypeChild,
+    schema_child_choice_type: &Type,
+    xml_reader_ident: &Ident,
     loop_children_ident_set: &mut HashSet<Ident>,
+    gen_context: &GenContext,
 ) -> Result<Option<Arm>, BuildErrorReport> {
-    let child_type = gen_context
+    let child_variant_schema_type = gen_context
         .type_name_type_map
-        .try_get(child.name.as_str())?;
-
-    let child_variant_name_ident = child.as_last_name_ident();
-    let child_variant_type = child_type.r#type(false);
+        .try_get(schema_type_child.name.as_str())?;
+    let child_variant_name_ident = schema_type_child.as_last_name_ident();
+    let child_variant_type = child_variant_schema_type.r#type(false);
 
     if !loop_children_ident_set.insert(child_variant_name_ident.clone()) {
         return Ok(None);
     }
 
     return Ok(Some(parse_quote! {
-        _ if #child_variant_type::matched_name(#event_ident.name().0) => {
-            children.push(#child_choice_enum_type::#child_variant_name_ident(std::boxed::Box::new(
-                #child_variant_type::deserialize_inner(xml_reader, Some((#event_ident, e_empty)))?,
-            )))
+        BytesEvent::BytesStart(bytes_start, is_empty) if #child_variant_type::matched_bytes_start(&bytes_start) => {
+            let mut child = #child_variant_type::default().deserialize_attributes(#xml_reader_ident, bytes_start)?;
+
+            if !is_empty {
+                child = child.deserialize_children(#xml_reader_ident)?;
+            }
+
+            children.push(#schema_child_choice_type::#child_variant_name_ident(std::boxed::Box::new(child)))
         }
     }));
 }
@@ -550,8 +364,8 @@ fn gen_simple_child_match_arm(
         let simple_type_name = schema_enum.r#type(false);
 
         return Ok(parse_quote! {
-            quick_xml::events::Event::Text(t) => {
-                xml_content = Some(#simple_type_name::from_bytes(&t.into_inner())?);
+            BytesEvent::BytesText(bytes_text) => {
+                xml_content = Some(#simple_type_name::try_from(bytes_text.into_inner().as_ref())?);
             }
         });
     }
@@ -564,20 +378,20 @@ fn gen_simple_child_match_arm(
     return Ok(match simple_type_str {
         "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
         | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
-            quick_xml::events::Event::Text(t) => {
-                xml_content.get_or_insert_with(String::new).push_str(&t.decode().map_err(SdkError::from)?);
+            BytesEvent::BytesText(bytes_text) => {
+                xml_content.get_or_insert_with(String::new).push_str(&bytes_text.decode().map_err(SdkError::from)?);
             }
         },
         "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => parse_quote! {
-            quick_xml::events::Event::Text(t) => {
-                xml_content = Some(parse_bool_bytes(&t.into_inner())?);
+            BytesEvent::BytesText(bytes_text) => {
+                xml_content = Some(parse_bool_bytes(&bytes_text.into_inner())?);
             }
         },
         "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
         | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => parse_quote! {
-            quick_xml::events::Event::Text(t) => {
+            BytesEvent::BytesText(bytes_text) => {
                 xml_content = Some(
-                    t.decode().map_err(SdkError::from)?.parse::<#r#type>().map_err(SdkError::from)?
+                    bytes_text.decode().map_err(SdkError::from)?.parse::<#r#type>().map_err(SdkError::from)?
                 );
             }
         },
@@ -585,64 +399,338 @@ fn gen_simple_child_match_arm(
     });
 }
 
-fn gen_field_match_arm(
-    schema: &OpenXmlSchemaTypeAttribute,
-    gen_context: &GenContext,
-) -> Result<Arm, BuildErrorReport> {
-    let attr_name_ident = schema.as_name_ident();
-    let attr_name_str = schema.as_name_str();
-    let attr_name_literal: LitByteStr =
-        parse_str(&format!("b\"{attr_name_str}\"")).map_err(BuildError::from)?;
-    let attr_type = schema.r#type(gen_context)?;
+struct TypeDeserializer {
+    declaration: Stmt,
+    matchers: Vec<Arm>,
+    reassignment: Stmt,
+}
 
-    match schema.r#type.as_ref().unwrap() {
-        OpenXmlSchemaTypeAttributeType::ListValue { .. } => {
-            return Ok(parse_quote! {
+impl TypeDeserializer {
+    fn xmlns(xml_reader_ident: &Ident, attr_ident: &Ident) -> Self {
+        let name_ident = format_ident!("xmlns");
+
+        let declaration = parse_quote! {
+            let mut #name_ident = XmlNamespace::default();
+        };
+
+        let matchers = vec![parse_quote! {
+            _ if #name_ident.deserialize_attributes(#xml_reader_ident, &#attr_ident)?.is_some() => {
+                continue;
+            }
+        }];
+
+        let reassignment = parse_quote! {
+            self.#name_ident = #name_ident;
+        };
+
+        Self {
+            declaration,
+            matchers,
+            reassignment,
+        }
+    }
+
+    fn xml_content(type_base_class: &str, gen_context: &GenContext) -> Self {
+        let name_ident = format_ident!("xml_content");
+
+        let declaration = parse_quote! {
+            let mut xml_content = None;
+        };
+
+        let matchers =
+            vec![gen_simple_child_match_arm(type_base_class, gen_context).expect("xml_content")];
+
+        let reassignment = parse_quote! {
+            self.#name_ident = #name_ident;
+        };
+
+        Self {
+            declaration,
+            matchers,
+            reassignment,
+        }
+    }
+
+    fn from_open_xml_schema_type_attribute(
+        schema_type_attribute: &OpenXmlSchemaTypeAttribute,
+        xml_reader_ident: &Ident,
+        attr_ident: &Ident,
+        gen_context: &GenContext,
+    ) -> Result<Self, BuildErrorReport> {
+        let attr_name_ident = schema_type_attribute.as_name_ident();
+        let attr_name_str = schema_type_attribute.as_name_str();
+        let attr_name_literal = Literal::byte_string(attr_name_str.as_bytes());
+        let attr_type = schema_type_attribute.r#type(gen_context)?;
+
+        let declaration = parse_quote! {
+            let mut #attr_name_ident = None;
+        };
+
+        let matchers = match schema_type_attribute.r#type.as_ref().unwrap() {
+            OpenXmlSchemaTypeAttributeType::ListValue { .. } => parse_quote! {
                 #attr_name_literal => {
                     #attr_name_ident = Some(
-                        attr.decode_and_unescape_value(xml_reader.decoder())
+                        #attr_ident.decode_and_unescape_value(#xml_reader_ident.decoder())
                             .map_err(SdkError::from)?
                             .into_owned()
                     );
                 }
-            });
-        }
-        OpenXmlSchemaTypeAttributeType::EnumValue { .. } => {
-            return Ok(parse_quote! {
+            },
+            OpenXmlSchemaTypeAttributeType::EnumValue { .. } => parse_quote! {
               #attr_name_literal => {
-                #attr_name_ident = Some(#attr_type::from_bytes(&attr.value)?);
+                #attr_name_ident = Some(#attr_type::try_from(#attr_ident.value.as_ref())?);
               }
-            });
+            },
+            OpenXmlSchemaTypeAttributeType::SimpleType { r#type } => match r#type.as_str() {
+                "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
+                | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
+                  #attr_name_literal => {
+                    #attr_name_ident = Some(#attr_ident.decode_and_unescape_value(#xml_reader_ident.decoder())
+                        .map_err(SdkError::from)?.into_owned());
+                  }
+                },
+                "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => {
+                    parse_quote! {
+                      #attr_name_literal => {
+                        #attr_name_ident = Some(parse_bool_bytes(&#attr_ident.value)?);
+                      }
+                    }
+                }
+                "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
+                | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => {
+                    parse_quote! {
+                      #attr_name_literal => {
+                        #attr_name_ident = Some(
+                          attr
+                            .decode_and_unescape_value(#xml_reader_ident.decoder()).map_err(SdkError::from)?
+                            .parse::<#attr_type>().map_err(SdkError::from)?,
+                        );
+                      }
+                    }
+                }
+                _ => unreachable!("{}", r#type),
+            },
+        };
+
+        let reassignment = if schema_type_attribute.is_validator_required() {
+            parse_quote! {
+                self.#attr_name_ident = #attr_name_ident
+                    .context_with(|| SdkError::CommonError(#attr_name_str.to_string()))?;
+            }
+        } else {
+            parse_quote! {
+                self.#attr_name_ident = #attr_name_ident;
+            }
+        };
+
+        Ok(Self {
+            declaration,
+            matchers,
+            reassignment,
+        })
+    }
+
+    fn from_open_xml_schema_type_particle(
+        schema_type_particle: &OpenXmlSchemaTypeParticle,
+        schema_type: &OpenXmlSchemaType,
+        xml_reader_ident: &Ident,
+        children_ident_set: &mut HashSet<Ident>,
+        gen_context: &GenContext,
+    ) -> Result<Option<Self>, BuildErrorReport> {
+        let child_map = schema_type.child_map();
+        let schema_type_child = child_map.try_get(schema_type_particle.name.as_str())?;
+
+        let child_property_name_str = schema_type_child.as_property_name_str();
+        let child_property_name_ident = schema_type_child.as_property_name_ident();
+
+        if let Some(arm) = gen_one_sequence_match_arm(
+            schema_type_child,
+            schema_type_particle,
+            xml_reader_ident,
+            children_ident_set,
+            gen_context,
+        )? {
+            let matchers = vec![arm];
+
+            return match schema_type_particle.as_occurrence() {
+                Occurrence::Required => Ok(Some(Self {
+                    declaration: parse_quote! {
+                        let mut #child_property_name_ident = None;
+                    },
+                    matchers,
+                    reassignment: parse_quote! {
+                        self.#child_property_name_ident = #child_property_name_ident
+                            .context_with(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
+                    },
+                })),
+                Occurrence::Optional => Ok(Some(Self {
+                    declaration: parse_quote! {
+                        let mut #child_property_name_ident = None;
+                    },
+                    matchers,
+                    reassignment: parse_quote! {
+                        self.#child_property_name_ident = #child_property_name_ident;
+                    },
+                })),
+                Occurrence::Repeated => Ok(Some(Self {
+                    declaration: parse_quote! {
+                        let mut #child_property_name_ident = vec![];
+                    },
+                    matchers,
+                    reassignment: parse_quote! {
+                        self.#child_property_name_ident = #child_property_name_ident;
+                    },
+                })),
+            };
         }
-        OpenXmlSchemaTypeAttributeType::SimpleType { r#type } => match r#type.as_str() {
-            "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
-            | "IntegerValue" | "SByteValue" | "StringValue" => {
-                return Ok(parse_quote! {
-                  #attr_name_literal => {
-                    #attr_name_ident = Some(attr.decode_and_unescape_value(xml_reader.decoder()).map_err(SdkError::from)?.into_owned());
-                  }
-                });
+
+        return Ok(None);
+    }
+
+    fn from_open_xml_schema_type_children(
+        schema_type_children: &[OpenXmlSchemaTypeChild],
+        schema_child_choice_type: &Type,
+        xml_reader_ident: &Ident,
+        children_ident_set: &mut HashSet<Ident>,
+        gen_context: &GenContext,
+    ) -> Result<Option<Self>, BuildErrorReport> {
+        let mut type_deserializer = TypeDeserializer {
+            declaration: parse_quote! {
+                let mut children = vec![];
+            },
+            matchers: vec![],
+            reassignment: parse_quote! {
+                self.children = children;
+            },
+        };
+
+        for schema_type_child in schema_type_children {
+            if let Some(matcher) = gen_child_match_arm(
+                schema_type_child,
+                schema_child_choice_type,
+                xml_reader_ident,
+                children_ident_set,
+                gen_context,
+            )? {
+                type_deserializer.matchers.push(matcher);
             }
-            "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => {
-                return Ok(parse_quote! {
-                  #attr_name_literal => {
-                    #attr_name_ident = Some(parse_bool_bytes(&attr.value)?);
-                  }
-                });
+        }
+
+        if type_deserializer.matchers.is_empty() {
+            return Ok(None);
+        }
+
+        return Ok(Some(type_deserializer));
+    }
+
+    fn from_schema_type(
+        schema_type: &OpenXmlSchemaType,
+        schema: &OpenXmlSchema,
+        xml_reader_ident: &Ident,
+        children_ident_set: &mut HashSet<Ident>,
+        gen_context: &GenContext,
+    ) -> Result<Vec<Self>, BuildErrorReport> {
+        let (type_base_class, _) = schema_type.split_name();
+
+        match schema_type.base_class.as_str() {
+            "OpenXmlLeafElement" => return Ok(vec![]),
+            "OpenXmlLeafTextElement" => {
+                return Ok(vec![TypeDeserializer::xml_content(
+                    type_base_class,
+                    gen_context,
+                )]);
             }
-            "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
-            | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => {
-                return Ok(parse_quote! {
-                  #attr_name_literal => {
-                    #attr_name_ident = Some(
-                      attr
-                        .decode_and_unescape_value(xml_reader.decoder()).map_err(SdkError::from)?
-                        .parse::<#attr_type>().map_err(SdkError::from)?,
-                    );
-                  }
-                });
+            "OpenXmlCompositeElement"
+            | "CustomXmlElement"
+            | "OpenXmlPartRootElement"
+            | "SdtElement" => {
+                if schema_type.is_one_sequence_flatten() {
+                    let mut type_deserializers = vec![];
+
+                    for schema_type_particle in &schema_type.particle.items {
+                        if let Some(type_deserializer) =
+                            TypeDeserializer::from_open_xml_schema_type_particle(
+                                schema_type_particle,
+                                schema_type,
+                                xml_reader_ident,
+                                children_ident_set,
+                                gen_context,
+                            )?
+                        {
+                            type_deserializers.push(type_deserializer);
+                        }
+                    }
+
+                    return Ok(type_deserializers);
+                } else {
+                    let mut type_deserializers = vec![];
+
+                    if !schema_type.children.is_empty() {
+                        let schema_child_choice_type = schema.enum_child_choice_type(schema_type);
+
+                        if let Some(type_deserializer) =
+                            TypeDeserializer::from_open_xml_schema_type_children(
+                                &schema_type.children,
+                                &schema_child_choice_type,
+                                xml_reader_ident,
+                                children_ident_set,
+                                gen_context,
+                            )?
+                        {
+                            type_deserializers.push(type_deserializer);
+                        }
+                    }
+
+                    return Ok(type_deserializers);
+                }
             }
-            _ => unreachable!("{}", r#type),
-        },
+            _ if schema_type.is_derived => {
+                let base_class_type = gen_context
+                    .type_name_type_map
+                    .try_get(format!("{type_base_class}/").as_str())?;
+
+                let mut type_deserializers = vec![];
+
+                if schema_type.is_one_sequence_flatten()
+                    && base_class_type.composite_type == Some(CompositeType::OneSequence)
+                {
+                    for schema_type_particle in &schema_type.particle.items {
+                        if let Some(type_deserializer) =
+                            TypeDeserializer::from_open_xml_schema_type_particle(
+                                schema_type_particle,
+                                schema_type,
+                                xml_reader_ident,
+                                children_ident_set,
+                                gen_context,
+                            )?
+                        {
+                            type_deserializers.push(type_deserializer);
+                        };
+                    }
+                } else if !schema_type.children.is_empty() {
+                    let schema_child_choice_type = schema.enum_child_choice_type(schema_type);
+
+                    if let Some(type_deserializer) =
+                        TypeDeserializer::from_open_xml_schema_type_children(
+                            &schema_type.children,
+                            &schema_child_choice_type,
+                            xml_reader_ident,
+                            children_ident_set,
+                            gen_context,
+                        )?
+                    {
+                        type_deserializers.push(type_deserializer);
+                    }
+                } else if base_class_type.base_class == "OpenXmlLeafTextElement" {
+                    type_deserializers
+                        .push(TypeDeserializer::xml_content(type_base_class, gen_context));
+                }
+
+                return Ok(type_deserializers);
+            }
+            _ => {
+                panic!("Unhandled schema_type: {schema_type:?}");
+            }
+        }
     }
 }

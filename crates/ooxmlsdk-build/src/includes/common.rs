@@ -1,6 +1,6 @@
 use quick_xml::{
     Decoder, Reader,
-    events::{BytesStart, Event, attributes::Attribute},
+    events::{BytesEnd, BytesStart, BytesText, Event, attributes::Attribute},
 };
 use rootcause::prelude::*;
 use std::{collections::BTreeMap, io::BufRead, path::Path};
@@ -41,37 +41,6 @@ pub trait XmlReader<'de> {
     fn decoder(&self) -> Decoder;
 }
 
-pub struct IoReader<R: BufRead> {
-    reader: Reader<R>,
-    buf: Vec<u8>,
-}
-
-impl<R: BufRead> IoReader<R> {
-    #[inline]
-    pub fn new(reader: Reader<R>) -> Self {
-        Self {
-            reader,
-            buf: vec![],
-        }
-    }
-}
-
-impl<'de, R: BufRead> XmlReader<'de> for IoReader<R> {
-    #[inline]
-    fn next(&mut self) -> Result<Event<'de>, SdkErrorReport> {
-        self.buf.clear();
-
-        Ok(self
-            .reader
-            .read_event_into(&mut self.buf)
-            .map_err(SdkError::from)?
-            .into_owned())
-    }
-
-    #[inline]
-    fn decoder(&self) -> Decoder { self.reader.decoder() }
-}
-
 pub struct SliceReader<'de> {
     reader: Reader<&'de [u8]>,
 }
@@ -98,41 +67,103 @@ pub trait Taggable {
 
     fn prefixed_name_or_name() -> &'static str { Self::PREFIXED_NAME.unwrap_or(Self::NAME) }
 
+    fn matched_bytes_start(bytes_start: &BytesStart<'_>) -> bool {
+        Self::matched_name(bytes_start.name().0)
+    }
+
+    fn matched_bytes_end(bytes_end: &BytesEnd<'_>) -> bool {
+        Self::matched_name(bytes_end.name().0)
+    }
+
     fn matched_name(bytes: &[u8]) -> bool {
-        return bytes == Self::NAME.as_bytes()
-            || Some(bytes) == Self::PREFIXED_NAME.map(|s| s.as_bytes());
+        let prefixed_bytes = Self::PREFIXED_NAME.map(|s| s.as_bytes());
+
+        trace!(
+            "Trying to match bytes: ({}) with ({}) or ({:?})",
+            String::from_utf8_lossy(bytes),
+            String::from_utf8_lossy(Self::NAME.as_bytes()),
+            prefixed_bytes.map(String::from_utf8_lossy)
+        );
+
+        return bytes == Self::NAME.as_bytes() || Some(bytes) == prefixed_bytes;
     }
 }
 
 pub trait Deserializeable: Taggable + Sized {
-    fn from_str(str: impl AsRef<str>) -> Result<Self, SdkErrorReport> {
+    fn from_str(str: impl AsRef<str>) -> Result<Self, SdkErrorReport>
+    where
+        Self: Default, {
         let mut xml_reader = quick_xml::Reader::from_str(str.as_ref());
         xml_reader.config_mut().check_end_names = false;
         xml_reader.config_mut().trim_text(false);
 
-        Self::deserialize_inner(&mut SliceReader::new(xml_reader), None)
+        Self::deserialize_from_xml_reader(&mut SliceReader::new(xml_reader))
     }
 
-    fn from_reader(reader: impl BufRead) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = quick_xml::Reader::from_reader(reader);
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SdkErrorReport>
+    where
+        Self: Default, {
+        let mut xml_reader = quick_xml::Reader::from_reader(bytes);
         xml_reader.config_mut().check_end_names = false;
         xml_reader.config_mut().trim_text(false);
 
-        Self::deserialize_inner(&mut IoReader::new(xml_reader), None)
+        Self::deserialize_from_xml_reader(&mut SliceReader::new(xml_reader))
     }
 
-    fn from_file(path: impl AsRef<Path>) -> Result<Self, SdkErrorReport> {
-        let mut xml_reader = quick_xml::Reader::from_file(path).map_err(SdkError::from)?;
-        xml_reader.config_mut().check_end_names = false;
-        xml_reader.config_mut().trim_text(false);
+    fn from_reader(mut reader: impl BufRead) -> Result<Self, SdkErrorReport>
+    where
+        Self: Default, {
+        let mut data = vec![];
+        reader.read_to_end(&mut data).map_err(SdkError::from)?;
 
-        Self::deserialize_inner(&mut IoReader::new(xml_reader), None)
+        Self::from_bytes(&data)
     }
 
-    fn deserialize_inner<'de>(
+    fn from_file(path: impl AsRef<Path>) -> Result<Self, SdkErrorReport>
+    where
+        Self: Default, {
+        let data = std::fs::read(path).map_err(SdkError::from)?;
+
+        Self::from_bytes(&data)
+    }
+
+    fn deserialize_from_xml_reader<'de>(
         xml_reader: &mut impl XmlReader<'de>,
-        xml_event: Option<(BytesStart<'de>, bool)>,
-    ) -> Result<Self, SdkErrorReport>;
+    ) -> Result<Self, SdkErrorReport>
+    where
+        Self: Default, {
+        let (bytes_start, is_empty) = BytesEvent::expect_taggable_start::<Self>(xml_reader)?;
+        let mut output = Self::default().deserialize_attributes(xml_reader, bytes_start)?;
+
+        if !is_empty {
+            output = output.deserialize_children(xml_reader)?;
+        }
+
+        return Ok(output);
+    }
+
+    fn deserialize_attributes<'de>(
+        self,
+        _xml_reader: &impl XmlReader<'de>,
+        _xml_event: BytesStart<'de>,
+    ) -> Result<Self, SdkErrorReport> {
+        tracing::warn!(
+            "({})'s deserialize_attributes uses the default no-op impl",
+            Self::prefixed_name_or_name()
+        );
+        Ok(self)
+    }
+
+    fn deserialize_children<'de>(
+        self,
+        _xml_reader: &mut impl XmlReader<'de>,
+    ) -> Result<Self, SdkErrorReport> {
+        tracing::warn!(
+            "({})'s deserialize_children uses the default no-op impl",
+            Self::prefixed_name_or_name()
+        );
+        Ok(self)
+    }
 }
 
 pub trait Serializeable: Taggable {
@@ -249,7 +280,7 @@ impl XmlNamespace {
 
     pub fn deserialize_attributes<'de>(
         &mut self,
-        xml_reader: &mut impl XmlReader<'de>,
+        xml_reader: &impl XmlReader<'de>,
         attribute: &Attribute<'_>,
     ) -> Result<Option<()>, SdkErrorReport> {
         match attribute.key.0 {
@@ -334,47 +365,69 @@ pub fn as_xml_attribute(key: &str, value: &str) -> String {
     return attribute;
 }
 
-#[inline(always)]
-pub(crate) fn expect_event_start<'de, T: Taggable>(
-    xml_reader: &mut impl XmlReader<'de>,
-    xml_event: Option<(BytesStart<'de>, bool)>,
-) -> Result<(BytesStart<'de>, bool), SdkErrorReport> {
-    if let Some((event, empty_tag)) = xml_event {
-        return Ok((event, empty_tag));
-    }
+#[derive(Debug)]
+pub enum BytesEvent<'de> {
+    BytesStart(BytesStart<'de>, bool),
+    BytesText(BytesText<'de>),
+    End(BytesEnd<'de>),
+}
 
-    let (event, empty_tag) = loop {
-        let event = xml_reader.next()?;
-        debug!("event: {event:?}");
+impl<'de> BytesEvent<'de> {
+    #[inline]
+    #[instrument(skip_all)]
+    pub fn expect_taggable_start<T: Taggable>(
+        xml_reader: &mut impl XmlReader<'de>,
+    ) -> Result<(BytesStart<'de>, bool), Report<SdkError>> {
+        loop {
+            let expect = Self::expect(xml_reader)?;
 
-        match event {
-            Event::Start(b) => break (b, false),
-            Event::Empty(b) => break (b, true),
-            Event::Eof => {
-                return Err(SdkError::UnknownError)
-                    .attach(format!("Reached EOF when reading [{event:?}]"));
+            match expect {
+                BytesEvent::BytesStart(bytes_start, is_empty) => {
+                    debug_assert!(
+                        T::matched_bytes_start(&bytes_start),
+                        "Expected ({}), found ({})",
+                        T::prefixed_name_or_name(),
+                        String::from_utf8_lossy(bytes_start.name().0)
+                    );
+
+                    return Ok((bytes_start, is_empty));
+                }
+                BytesEvent::BytesText(..) => {}
+                BytesEvent::End(..) => unreachable!(),
             }
-            _ => continue,
         }
-    };
-
-    let event_name = event.name().0;
-    if !T::matched_name(event_name) {
-        let expected_tags = [Some(T::NAME), T::PREFIXED_NAME]
-            .into_iter()
-            .flatten()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let found_event_name = String::from_utf8_lossy(event_name).to_string();
-
-        warn!("Mismatch: [{found_event_name}] does not match any of [{expected_tags}]");
-
-        Err(SdkError::MismatchError {
-            expected: format!("Any of [{expected_tags}]"),
-            found: found_event_name,
-        })?;
     }
 
-    Ok((event, empty_tag))
+    #[inline]
+    #[instrument(skip_all)]
+    pub fn expect(xml_reader: &mut impl XmlReader<'de>) -> Result<Self, Report<SdkError>> {
+        loop {
+            let event = xml_reader.next()?;
+            debug!("Event: {event:?}");
+
+            match event {
+                Event::Start(bytes_start) => {
+                    tracing::debug!("Matched Start: ({})", String::from_utf8_lossy(&bytes_start));
+                    return Ok(Self::BytesStart(bytes_start, false));
+                }
+                Event::Empty(bytes_start) => {
+                    tracing::debug!("Matched Empty: ({})", String::from_utf8_lossy(&bytes_start));
+                    return Ok(Self::BytesStart(bytes_start, true));
+                }
+                Event::Text(bytes_text) => {
+                    tracing::debug!("Matched Text: ({})", String::from_utf8_lossy(&bytes_text));
+                    return Ok(Self::BytesText(bytes_text));
+                }
+                Event::End(bytes_end) => {
+                    tracing::debug!("Matched End: ({})", String::from_utf8_lossy(&bytes_end));
+                    return Ok(Self::End(bytes_end));
+                }
+                Event::Eof => {
+                    return Err(SdkError::UnknownError)
+                        .attach(format!("Reached EOF when reading [{event:?}]"));
+                }
+                _ => continue,
+            };
+        }
+    }
 }
