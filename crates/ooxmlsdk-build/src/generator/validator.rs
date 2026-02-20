@@ -11,7 +11,7 @@ pub fn gen_validators(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
 ) -> Result<String, BuildErrorReport> {
-    let mut contents = String::with_capacity(const { 128 * 1024 });
+    let mut contents = String::with_capacity(const { 256 * 1024 });
 
     contents.push_str(
         &schema

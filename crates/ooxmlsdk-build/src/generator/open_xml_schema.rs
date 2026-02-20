@@ -15,7 +15,7 @@ pub fn gen_open_xml_schemas(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
 ) -> Result<String, BuildErrorReport> {
-    let mut contents = String::with_capacity(const { 256 * 1024 });
+    let mut contents = String::with_capacity(const { 512 * 1024 });
 
     if !schema.types.is_empty() {
         contents.push_str("#![allow(irrefutable_let_patterns)]\n");

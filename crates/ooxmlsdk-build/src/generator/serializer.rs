@@ -16,7 +16,7 @@ pub fn gen_serializer(
     schema: &OpenXmlSchema,
     gen_context: &GenContext,
 ) -> Result<String, BuildErrorReport> {
-    let mut contents = String::with_capacity(const { 128 * 1024 });
+    let mut contents = String::with_capacity(const { 256 * 1024 });
 
     if !schema.types.is_empty() {
         contents.push_str(&gen_use_common_glob().to_string());
