@@ -354,6 +354,7 @@ fn gen_child_match_arm(
     }));
 }
 
+//TODO: Instead of branching the match arms, we should branch on the reassignments
 fn gen_simple_child_match_arm(
     first_name: &str,
     gen_context: &GenContext,
@@ -363,7 +364,7 @@ fn gen_simple_child_match_arm(
 
         return Ok(parse_quote! {
             BytesEvent::BytesText(bytes_text) => {
-                xml_content = Some(#simple_type_name::try_from(bytes_text.into_inner().as_ref())?);
+                xml_content = Some(XmlContent(#simple_type_name::try_from(bytes_text.into_inner().as_ref())?));
             }
         });
     }
@@ -377,19 +378,19 @@ fn gen_simple_child_match_arm(
         "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
         | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
             BytesEvent::BytesText(bytes_text) => {
-                xml_content.get_or_insert_with(String::new).push_str(&bytes_text.decode().map_err(SdkError::from)?);
+                xml_content.get_or_insert_with(XmlContent::default).append_escaped_bytes(bytes_text.into_inner().as_ref())?;
             }
         },
         "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => parse_quote! {
             BytesEvent::BytesText(bytes_text) => {
-                xml_content = Some(parse_bool_bytes(&bytes_text.into_inner())?);
+                xml_content = Some(XmlContent(parse_bool_bytes(&bytes_text.into_inner())?));
             }
         },
         "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
         | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => parse_quote! {
             BytesEvent::BytesText(bytes_text) => {
                 xml_content = Some(
-                    bytes_text.decode().map_err(SdkError::from)?.parse::<#r#type>().map_err(SdkError::from)?
+                    XmlContent(bytes_text.decode().map_err(SdkError::from)?.parse::<#r#type>().map_err(SdkError::from)?)
                 );
             }
         },

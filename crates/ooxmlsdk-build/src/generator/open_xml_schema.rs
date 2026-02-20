@@ -68,7 +68,7 @@ fn gen_schema_type(
         let simple_type_name = gen_xml_content_type(schema_type, schema_namespace, gen_context)?;
 
         fields.push(quote! {
-            pub xml_content: Option<#simple_type_name>,
+            pub xml_content: Option<crate::common::XmlContent<#simple_type_name>>,
         });
     } else if schema_type.base_class == "OpenXmlLeafElement" {
         for attr in &schema_type.attributes {
@@ -159,7 +159,7 @@ fn gen_schema_type(
                 gen_xml_content_type(base_class_type, schema_namespace, gen_context)?;
 
             fields.push(quote! {
-                pub xml_content: Option<#simple_type_name>,
+                pub xml_content: Option<crate::common::XmlContent<#simple_type_name>>,
             });
         }
     } else {

@@ -253,7 +253,7 @@ fn gen_inner_writer(
         "OpenXmlLeafTextElement" => {
             return Ok(Some(quote! {
               if let Some(xml_content) = &self.xml_content {
-                #xml_inner_ident.push_str(&quick_xml::escape::escape(xml_content.to_string()));
+                #xml_inner_ident.push_str(&xml_content.0.to_string());
               }
             }));
         }
@@ -295,7 +295,7 @@ fn gen_inner_writer(
                 if base_class_type.base_class == "OpenXmlLeafTextElement" {
                     return Ok(Some(quote! {
                       if let Some(xml_content) = &self.xml_content {
-                        #xml_inner_ident.push_str(&quick_xml::escape::escape(xml_content.to_string()));
+                        #xml_inner_ident.push_str(&xml_content.0.to_string());
                       }
                     }));
                 };

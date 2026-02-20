@@ -1,5 +1,6 @@
 use quick_xml::{
     Decoder, Reader,
+    escape::{escape, unescape},
     events::{BytesEnd, BytesStart, BytesText, Event, attributes::Attribute},
 };
 use rootcause::prelude::*;
@@ -21,8 +22,10 @@ pub enum SdkError {
     ParseIntError(#[from] std::num::ParseIntError),
     #[error("ParseFloatError")]
     ParseFloatError(#[from] std::num::ParseFloatError),
-    #[error("StdFmtError")]
-    StdFmtError(#[from] std::fmt::Error),
+    #[error("EscapeError")]
+    EscapeError(#[from] quick_xml::escape::EscapeError),
+    #[error("Utf8Error")]
+    Utf8Error(#[from] std::str::Utf8Error),
     #[error("StdIoError")]
     StdIoError(#[from] std::io::Error),
     #[cfg(feature = "parts")]
@@ -314,6 +317,28 @@ impl XmlNamespace {
             }
             _ => Ok(None),
         }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Default)]
+pub struct XmlContent<T = String>(pub T);
+
+impl XmlContent<String> {
+    pub fn from_unescaped(str: impl AsRef<str>) -> Self { Self(escape(str.as_ref()).to_string()) }
+
+    pub fn unescaped(&self) -> Result<String, SdkErrorReport> {
+        Ok(unescape(self.0.as_str())
+            .map_err(SdkError::from)
+            .attach_with(|| self.0.to_owned())?
+            .to_string())
+    }
+
+    pub fn append_escaped_bytes(&mut self, bytes: &[u8]) -> Result<(), SdkErrorReport> {
+        let str = str::from_utf8(bytes).map_err(SdkError::from)?;
+
+        self.0.push_str(str);
+
+        Ok(())
     }
 }
 
