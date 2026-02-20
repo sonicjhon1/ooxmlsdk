@@ -358,7 +358,7 @@ fn gen_child_match_arm(
 fn gen_simple_child_match_arm(
     first_name: &str,
     gen_context: &GenContext,
-) -> Result<Arm, BuildErrorReport> {
+) -> Result<Vec<Arm>, BuildErrorReport> {
     if let Some(schema_enum) = gen_context.enum_type_enum_map.get(first_name) {
         let simple_type_name = schema_enum.r#type(false);
 
@@ -379,6 +379,9 @@ fn gen_simple_child_match_arm(
         | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
             BytesEvent::BytesText(bytes_text) => {
                 xml_content.get_or_insert_with(XmlContent::default).append_escaped_bytes(bytes_text.into_inner().as_ref())?;
+            },
+            BytesEvent::BytesRef(bytes_ref) => {
+                xml_content.get_or_insert_with(XmlContent::default).append_escaped_ref_bytes(bytes_ref.into_inner().as_ref())?;
             }
         },
         "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => parse_quote! {
@@ -437,7 +440,7 @@ impl TypeDeserializer {
         };
 
         let matchers =
-            vec![gen_simple_child_match_arm(type_base_class, gen_context).expect("xml_content")];
+            gen_simple_child_match_arm(type_base_class, gen_context).expect("xml_content");
 
         let reassignment = parse_quote! {
             self.#name_ident = #name_ident;

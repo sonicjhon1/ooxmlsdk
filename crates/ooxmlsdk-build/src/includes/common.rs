@@ -1,7 +1,7 @@
 use quick_xml::{
     Decoder, Reader,
     escape::{escape, unescape},
-    events::{BytesEnd, BytesStart, BytesText, Event, attributes::Attribute},
+    events::{BytesEnd, BytesRef, BytesStart, BytesText, Event, attributes::Attribute},
 };
 use rootcause::prelude::*;
 use std::{collections::BTreeMap, io::BufRead, path::Path};
@@ -333,6 +333,14 @@ impl XmlContent<String> {
             .to_string())
     }
 
+    pub fn append_escaped_ref_bytes(&mut self, ref_bytes: &[u8]) -> Result<(), SdkErrorReport> {
+        let ref_str = format!("&{};", str::from_utf8(ref_bytes).map_err(SdkError::from)?);
+
+        self.0.push_str(&ref_str);
+
+        Ok(())
+    }
+
     pub fn append_escaped_bytes(&mut self, bytes: &[u8]) -> Result<(), SdkErrorReport> {
         let str = str::from_utf8(bytes).map_err(SdkError::from)?;
 
@@ -394,6 +402,7 @@ pub fn as_xml_attribute(key: &str, value: &str) -> String {
 pub enum BytesEvent<'de> {
     BytesStart(BytesStart<'de>, bool),
     BytesText(BytesText<'de>),
+    BytesRef(BytesRef<'de>),
     End(BytesEnd<'de>),
 }
 
@@ -418,6 +427,7 @@ impl<'de> BytesEvent<'de> {
                     return Ok((bytes_start, is_empty));
                 }
                 BytesEvent::BytesText(..) => {}
+                BytesEvent::BytesRef(..) => {}
                 BytesEvent::End(..) => unreachable!(),
             }
         }
@@ -442,6 +452,10 @@ impl<'de> BytesEvent<'de> {
                 Event::Text(bytes_text) => {
                     tracing::debug!("Matched Text: ({})", String::from_utf8_lossy(&bytes_text));
                     return Ok(Self::BytesText(bytes_text));
+                }
+                Event::GeneralRef(bytes_ref) => {
+                    tracing::debug!("Matched Ref: ({})", String::from_utf8_lossy(&bytes_ref));
+                    return Ok(Self::BytesRef(bytes_ref));
                 }
                 Event::End(bytes_end) => {
                     tracing::debug!("Matched End: ({})", String::from_utf8_lossy(&bytes_end));
