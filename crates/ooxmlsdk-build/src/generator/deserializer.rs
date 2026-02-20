@@ -19,8 +19,6 @@ pub fn gen_deserializers(
 
     if !schema.types.is_empty() || !schema.enums.is_empty() {
         contents.push_str(&gen_use_common_glob().to_string());
-        contents.push_str("use rootcause::prelude::*;");
-        contents.push_str("use rootcause::option_ext::OptionExt;");
     }
 
     contents.push_str(
@@ -515,7 +513,7 @@ impl TypeDeserializer {
         let reassignment = if schema_type_attribute.is_validator_required() {
             parse_quote! {
                 self.#attr_name_ident = #attr_name_ident
-                    .context_with(|| SdkError::CommonError(#attr_name_str.to_string()))?;
+                    .ok_or_else(|| SdkError::CommonError(#attr_name_str.to_string()))?;
             }
         } else {
             parse_quote! {
@@ -560,7 +558,7 @@ impl TypeDeserializer {
                     matchers,
                     reassignment: parse_quote! {
                         self.#child_property_name_ident = #child_property_name_ident
-                            .context_with(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
+                            .ok_or_else(|| SdkError::CommonError(#child_property_name_str.to_string()))?;
                     },
                 })),
                 Occurrence::Optional => Ok(Some(Self {

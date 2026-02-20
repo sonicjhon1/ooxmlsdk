@@ -17,6 +17,11 @@ pub fn gen_open_xml_schemas(
 ) -> Result<String, BuildErrorReport> {
     let mut contents = String::with_capacity(const { 256 * 1024 });
 
+    if !schema.types.is_empty() {
+        contents.push_str("#![allow(irrefutable_let_patterns)]\n");
+        contents.push_str("#![allow(non_snake_case)]\n");
+    }
+
     contents.push_str(
         &schema
             .types
