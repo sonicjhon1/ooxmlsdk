@@ -13,6 +13,10 @@ pub fn gen_validators(
 ) -> Result<String, BuildErrorReport> {
     let mut contents = String::with_capacity(const { 256 * 1024 });
 
+    if !schema.types.is_empty() {
+        contents.push_str("#![allow(clippy::possible_missing_else)]\n");
+    }
+
     contents.push_str(
         &schema
             .types

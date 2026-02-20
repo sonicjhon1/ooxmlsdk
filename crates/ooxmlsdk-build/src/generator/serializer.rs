@@ -19,6 +19,7 @@ pub fn gen_serializer(
     let mut contents = String::with_capacity(const { 256 * 1024 });
 
     if !schema.types.is_empty() {
+        contents.push_str("#![allow(clippy::possible_missing_else)]\n");
         contents.push_str(&gen_use_common_glob().to_string());
     }
 

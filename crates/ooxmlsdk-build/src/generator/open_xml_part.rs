@@ -18,6 +18,9 @@ pub fn gen_open_xml_parts(
     part: &OpenXmlPart,
     gen_context: &GenContext,
 ) -> Result<String, BuildErrorReport> {
+    let attributes = quote! {
+        #![allow(clippy::possible_missing_else)]
+    };
     let use_common_glob = gen_use_common_glob();
 
     let relationship_type_str = &part.relationship_type;
@@ -402,6 +405,7 @@ pub fn gen_open_xml_parts(
     };
 
     Ok(quote! {
+        #attributes
         #use_common_glob
 
         #part_struct
