@@ -48,6 +48,37 @@ pub struct SliceReader<'de> {
     reader: Reader<&'de [u8]>,
 }
 
+pub struct IoReader<R: BufRead> {
+    reader: Reader<R>,
+    buf: Vec<u8>,
+}
+
+impl<R: BufRead> IoReader<R> {
+    #[inline]
+    pub fn new(reader: Reader<R>) -> Self {
+        Self {
+            reader,
+            buf: vec![],
+        }
+    }
+}
+
+impl<'de, R: BufRead> XmlReader<'de> for IoReader<R> {
+    #[inline]
+    fn next(&mut self) -> Result<Event<'de>, SdkErrorReport> {
+        self.buf.clear();
+
+        Ok(self
+            .reader
+            .read_event_into(&mut self.buf)
+            .map_err(SdkError::from)?
+            .into_owned())
+    }
+
+    #[inline]
+    fn decoder(&self) -> Decoder { self.reader.decoder() }
+}
+
 impl<'de> SliceReader<'de> {
     #[inline]
     pub fn new(reader: Reader<&'de [u8]>) -> Self { Self { reader } }
@@ -113,21 +144,24 @@ pub trait Deserializeable: Taggable + Sized {
         Self::deserialize_from_xml_reader(&mut SliceReader::new(xml_reader))
     }
 
-    fn from_reader(mut reader: impl BufRead) -> Result<Self, SdkErrorReport>
+    fn from_reader(reader: impl BufRead) -> Result<Self, SdkErrorReport>
     where
         Self: Default, {
-        let mut data = vec![];
-        reader.read_to_end(&mut data).map_err(SdkError::from)?;
+        let mut xml_reader = quick_xml::Reader::from_reader(reader);
+        xml_reader.config_mut().check_end_names = false;
+        xml_reader.config_mut().trim_text(false);
 
-        Self::from_bytes(&data)
+        Self::deserialize_from_xml_reader(&mut IoReader::new(xml_reader))
     }
 
     fn from_file(path: impl AsRef<Path>) -> Result<Self, SdkErrorReport>
     where
         Self: Default, {
-        let data = std::fs::read(path).map_err(SdkError::from)?;
+        let mut xml_reader = quick_xml::Reader::from_file(path).map_err(SdkError::from)?;
+        xml_reader.config_mut().check_end_names = false;
+        xml_reader.config_mut().trim_text(false);
 
-        Self::from_bytes(&data)
+        Self::deserialize_from_xml_reader(&mut IoReader::new(xml_reader))
     }
 
     fn deserialize_from_xml_reader<'de>(
