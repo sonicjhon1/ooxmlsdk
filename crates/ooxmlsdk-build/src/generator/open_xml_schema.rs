@@ -24,15 +24,6 @@ pub fn gen_open_xml_schemas(
 
     contents.push_str(
         &schema
-            .types
-            .par_iter()
-            .map(|schema_type| gen_schema_type(schema, schema_type, gen_context))
-            .collect::<Result<Vec<_>, _>>()?
-            .join("\n"),
-    );
-
-    contents.push_str(
-        &schema
             .enums
             .par_iter()
             .map(gen_schema_enum)
@@ -40,7 +31,45 @@ pub fn gen_open_xml_schemas(
             .join("\n"),
     );
 
+    contents.push_str(
+        &schema
+            .types
+            .par_iter()
+            .map(|schema_type| gen_schema_type(schema, schema_type, gen_context))
+            .collect::<Result<Vec<_>, _>>()?
+            .join("\n"),
+    );
+
     Ok(contents)
+}
+
+fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> String {
+    let enum_name_ident = format_ident!("{}", schema_enum.name.to_upper_camel_case());
+
+    let mut variants: Vec<Variant> = vec![];
+
+    for (i, schema_enum_facet) in schema_enum.facets.iter().enumerate() {
+        let variant_ident = schema_enum_facet.as_variant_ident();
+
+        if i == 0 {
+            variants.push(parse_quote! {
+                #[default]
+                #variant_ident
+            });
+        } else {
+            variants.push(parse_quote! {
+                #variant_ident
+            });
+        }
+    }
+
+    return quote! {
+        #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+        pub enum #enum_name_ident {
+            #( #variants, )*
+        }
+    }
+    .to_string();
 }
 
 fn gen_schema_type(
@@ -163,35 +192,6 @@ fn gen_schema_type(
         #( #child_choice_enum_impls )*
     }
     .to_string());
-}
-
-fn gen_schema_enum(schema_enum: &OpenXmlSchemaEnum) -> String {
-    let enum_name_ident = format_ident!("{}", schema_enum.name.to_upper_camel_case());
-
-    let mut variants: Vec<Variant> = vec![];
-
-    for (i, schema_enum_facet) in schema_enum.facets.iter().enumerate() {
-        let variant_ident = schema_enum_facet.as_variant_ident();
-
-        if i == 0 {
-            variants.push(parse_quote! {
-                #[default]
-                #variant_ident
-            });
-        } else {
-            variants.push(parse_quote! {
-                #variant_ident
-            });
-        }
-    }
-
-    return quote! {
-        #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
-        pub enum #enum_name_ident {
-            #( #variants, )*
-        }
-    }
-    .to_string();
 }
 
 fn gen_schema_field_attributes(
