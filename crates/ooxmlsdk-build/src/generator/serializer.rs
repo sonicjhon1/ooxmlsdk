@@ -71,7 +71,7 @@ fn gen_schema_type(
     }
 
     for attr_schema in &schema_type.attributes {
-        xml_attr_writers.push(gen_attr_writer(attr_schema, &xml_attr_ident));
+        xml_attr_writers.push(gen_attr_writer(attr_schema, gen_context, &xml_attr_ident));
     }
 
     let xml_inner_writer = gen_inner_writer(
@@ -149,20 +149,24 @@ fn gen_schema_enum(
 }
 
 fn gen_attr_writer(
-    attr_schema: &OpenXmlSchemaTypeAttribute,
+    schema_type_attribute: &OpenXmlSchemaTypeAttribute,
+    gen_context: &GenContext,
     attributes_ident: &Ident,
 ) -> TokenStream {
-    let attr_value_ident = attr_schema.as_name_ident();
-    let attr_name_str = attr_schema.as_name_str();
+    let ResolvedSchemaTypeAttribute {
+        field_name_literal_string,
+        field_name_ident,
+        ..
+    } = schema_type_attribute.resolved_schema_type_attribute(gen_context);
 
-    if attr_schema.is_validator_required() {
+    if schema_type_attribute.is_validator_required() {
         quote! {
-          #attributes_ident.push_str(&as_xml_attribute(#attr_name_str, &quick_xml::escape::escape(self.#attr_value_ident.to_string())));
+          #attributes_ident.push_str(&as_xml_attribute(#field_name_literal_string, &quick_xml::escape::escape(self.#field_name_ident.to_string())));
         }
     } else {
         quote! {
-          if let Some(#attr_value_ident) = &self.#attr_value_ident {
-            #attributes_ident.push_str(&as_xml_attribute(#attr_name_str, &quick_xml::escape::escape(#attr_value_ident.to_string())));
+          if let Some(#field_name_ident) = &self.#field_name_ident {
+            #attributes_ident.push_str(&as_xml_attribute(#field_name_literal_string, &quick_xml::escape::escape(#field_name_ident.to_string())));
           }
         }
     }
@@ -284,7 +288,7 @@ fn gen_inner_writer(
                 .try_get(format!("{type_base_class}/").as_str())?;
 
             for attribute in &base_class_type.attributes {
-                attributes_writer.push(gen_attr_writer(attribute, attributes_ident));
+                attributes_writer.push(gen_attr_writer(attribute, gen_context, attributes_ident));
             }
 
             // Children must be deduped

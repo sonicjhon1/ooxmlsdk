@@ -1,4 +1,3 @@
-use proc_macro2::Literal;
 use quote::{format_ident, quote};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::HashSet;
@@ -459,19 +458,23 @@ impl TypeDeserializer {
         attr_ident: &Ident,
         gen_context: &GenContext,
     ) -> Result<Self, BuildErrorReport> {
-        let attr_name_ident = schema_type_attribute.as_name_ident();
-        let attr_name_str = schema_type_attribute.as_name_str();
-        let attr_name_literal = Literal::byte_string(attr_name_str.as_bytes());
-        let attr_type = schema_type_attribute.r#type(gen_context)?;
+        let ResolvedSchemaTypeAttribute {
+            field_type,
+            field_name_literal_string,
+            field_name_literal_byte,
+            field_name_ident,
+            is_validator_required,
+            ..
+        } = schema_type_attribute.resolved_schema_type_attribute(gen_context);
 
         let declaration = parse_quote! {
-            let mut #attr_name_ident = None;
+            let mut #field_name_ident = None;
         };
 
         let matchers = match schema_type_attribute.r#type.as_ref().unwrap() {
             OpenXmlSchemaTypeAttributeType::ListValue { .. } => parse_quote! {
-                #attr_name_literal => {
-                    #attr_name_ident = Some(
+                #field_name_literal_byte => {
+                    #field_name_ident = Some(
                         #attr_ident.decode_and_unescape_value(#xml_reader_ident.decoder())
                             .map_err(SdkError::from)?
                             .into_owned()
@@ -479,33 +482,33 @@ impl TypeDeserializer {
                 }
             },
             OpenXmlSchemaTypeAttributeType::EnumValue { .. } => parse_quote! {
-              #attr_name_literal => {
-                #attr_name_ident = Some(#attr_type::try_from(#attr_ident.value.as_ref())?);
+              #field_name_literal_byte => {
+                #field_name_ident = Some(#field_type::try_from(#attr_ident.value.as_ref())?);
               }
             },
             OpenXmlSchemaTypeAttributeType::SimpleType { r#type } => match r#type.as_str() {
                 "Base64BinaryValue" | "DateTimeValue" | "DecimalValue" | "HexBinaryValue"
                 | "IntegerValue" | "SByteValue" | "StringValue" => parse_quote! {
-                  #attr_name_literal => {
-                    #attr_name_ident = Some(#attr_ident.decode_and_unescape_value(#xml_reader_ident.decoder())
+                  #field_name_literal_byte => {
+                    #field_name_ident = Some(#attr_ident.decode_and_unescape_value(#xml_reader_ident.decoder())
                         .map_err(SdkError::from)?.into_owned());
                   }
                 },
                 "BooleanValue" | "OnOffValue" | "TrueFalseBlankValue" | "TrueFalseValue" => {
                     parse_quote! {
-                      #attr_name_literal => {
-                        #attr_name_ident = Some(parse_bool_bytes(&#attr_ident.value)?);
+                      #field_name_literal_byte => {
+                        #field_name_ident = Some(parse_bool_bytes(&#attr_ident.value)?);
                       }
                     }
                 }
                 "ByteValue" | "Int16Value" | "Int32Value" | "Int64Value" | "UInt16Value"
                 | "UInt32Value" | "UInt64Value" | "DoubleValue" | "SingleValue" => {
                     parse_quote! {
-                      #attr_name_literal => {
-                        #attr_name_ident = Some(
+                      #field_name_literal_byte => {
+                        #field_name_ident = Some(
                           attr
                             .decode_and_unescape_value(#xml_reader_ident.decoder()).map_err(SdkError::from)?
-                            .parse::<#attr_type>().map_err(SdkError::from)?,
+                            .parse::<#field_type>().map_err(SdkError::from)?,
                         );
                       }
                     }
@@ -514,14 +517,14 @@ impl TypeDeserializer {
             },
         };
 
-        let reassignment = if schema_type_attribute.is_validator_required() {
+        let reassignment = if is_validator_required {
             parse_quote! {
-                self.#attr_name_ident = #attr_name_ident
-                    .ok_or_else(|| SdkError::CommonError(#attr_name_str.to_string()))?;
+                self.#field_name_ident = #field_name_ident
+                    .ok_or_else(|| SdkError::CommonError(#field_name_literal_string.to_string()))?;
             }
         } else {
             parse_quote! {
-                self.#attr_name_ident = #attr_name_ident;
+                self.#field_name_ident = #field_name_ident;
             }
         };
 

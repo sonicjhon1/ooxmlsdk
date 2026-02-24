@@ -4,11 +4,13 @@ use crate::{
     utils::{escape_snake_case, escape_upper_camel_case},
 };
 use heck::ToUpperCamelCase;
+use proc_macro2::Literal;
 use quote::format_ident;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rootcause::{option_ext::OptionExt, prelude::ResultExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use syn::{Ident, Type, parse_quote};
+use syn::{Attribute, Ident, Type, parse_quote};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
@@ -143,11 +145,30 @@ impl OpenXmlSchemaType {
     }
 
     #[inline(always)]
-    pub fn split_name(&self) -> (&str, &str) { return self.name.split_once('/').unwrap() }
+    pub fn split_name(&self) -> (&str, &str) {
+        return self
+            .name
+            .split_once('/')
+            .context_with(|| self.name.to_owned())
+            .unwrap();
+    }
 
     #[inline(always)]
     pub fn split_last_name(&self) -> (&str, &str) {
-        return self.split_name().1.split_once(':').unwrap();
+        let last_name = self.split_name().1;
+
+        return last_name
+            .split_once(':')
+            .context_with(|| self.name.to_owned())
+            .attach_with(|| last_name.to_owned())
+            .unwrap();
+    }
+
+    #[inline(always)]
+    pub fn try_split_last_name(&self) -> Option<(&str, &str)> {
+        let last_name = self.split_name().1;
+
+        return last_name.split_once(':');
     }
 
     #[inline(always)]
@@ -191,6 +212,66 @@ impl OpenXmlSchemaType {
             let module_name = self.module_name_ident();
 
             return parse_quote!(crate::schemas::#module_name::#ident);
+        }
+    }
+
+    pub fn resolved_schema_type(&'_ self) -> ResolvedSchemaType<'_> {
+        ResolvedSchemaType::from_type(self)
+    }
+
+    pub fn resolved_schema_type_attributes(
+        &self,
+        gen_context: &GenContext,
+    ) -> Vec<ResolvedSchemaTypeAttribute> {
+        self.attributes
+            .iter()
+            .map(|a| a.resolved_schema_type_attribute(gen_context))
+            .collect()
+    }
+}
+
+#[derive(Clone)]
+pub struct ResolvedSchemaType<'a> {
+    pub schema_attributes: Vec<Attribute>,
+    pub schema_ident: Ident,
+    pub schema_type_short: Type,
+    pub schema_type_full: Type,
+    pub schema_base_class_short: &'a str,
+    pub schema_base_class_full: &'a str,
+    pub schema_prefix: Option<&'a str>,
+    pub schema_name: Option<&'a str>,
+}
+
+impl<'a> ResolvedSchemaType<'a> {
+    pub fn from_type(schema_type: &'a OpenXmlSchemaType) -> Self {
+        let (schema_base_class_full, _) = schema_type.split_name();
+        let (schema_prefix, schema_name) = schema_type.try_split_last_name().unzip();
+
+        let version_from = if schema_type.version.is_empty() {
+            "Office2007"
+        } else {
+            schema_type.version.as_str()
+        };
+
+        let doc_summary = schema_type.summary.as_str();
+        let doc_version = format!("Available starting from ({version_from})");
+        let doc_represents = format!("Represents the schema ({})", schema_type.name);
+
+        Self {
+            schema_attributes: parse_quote! {
+                #[doc = #doc_summary]
+                #[doc = ""]
+                #[doc = #doc_version]
+                #[doc = ""]
+                #[doc = #doc_represents]
+            },
+            schema_ident: schema_type.class_name_ident(),
+            schema_type_short: schema_type.r#type(true),
+            schema_type_full: schema_type.r#type(false),
+            schema_base_class_full,
+            schema_base_class_short: schema_type.base_class.as_str(),
+            schema_prefix,
+            schema_name,
         }
     }
 }
@@ -315,6 +396,66 @@ impl OpenXmlSchemaTypeAttribute {
                 return Ok(parse_quote!(crate::common::simple_type::#ident));
             }
             None => unreachable!(),
+        }
+    }
+
+    pub fn resolved_schema_type_attribute(
+        &self,
+        gen_context: &GenContext,
+    ) -> ResolvedSchemaTypeAttribute {
+        ResolvedSchemaTypeAttribute::from_type_attribute(self, gen_context)
+    }
+}
+
+#[derive(Clone)]
+pub struct ResolvedSchemaTypeAttribute {
+    pub field_attributes: Vec<Attribute>,
+    pub field_name_literal_string: Literal,
+    pub field_name_literal_byte: Literal,
+    pub field_name_ident: Ident,
+    pub field_type: Type,
+    pub field_type_wrapped: Type,
+    pub is_validator_required: bool,
+}
+
+impl ResolvedSchemaTypeAttribute {
+    pub fn from_type_attribute(
+        schema_type_attribute: &OpenXmlSchemaTypeAttribute,
+        gen_context: &GenContext,
+    ) -> Self {
+        let field_name_str = schema_type_attribute.as_name_str();
+
+        let version_from = if schema_type_attribute.version.is_empty() {
+            "Office2007"
+        } else {
+            schema_type_attribute.version.as_str()
+        };
+
+        let doc_property_comments = schema_type_attribute.property_comments.as_str();
+        let doc_version = format!("Available starting from ({version_from})");
+        let doc_represents = format!("Represents the attribute ({field_name_str})");
+
+        let field_type = schema_type_attribute.r#type(gen_context).unwrap();
+        let is_validator_required = schema_type_attribute.is_validator_required();
+
+        Self {
+            field_attributes: parse_quote! {
+                #[doc = #doc_property_comments]
+                #[doc = ""]
+                #[doc = #doc_version]
+                #[doc = ""]
+                #[doc = #doc_represents]
+            },
+            field_name_literal_string: Literal::string(field_name_str),
+            field_name_literal_byte: Literal::byte_string(field_name_str.as_bytes()),
+            field_name_ident: schema_type_attribute.as_name_ident(),
+            field_type: field_type.clone(),
+            field_type_wrapped: if is_validator_required {
+                field_type
+            } else {
+                parse_quote!(Option<#field_type>)
+            },
+            is_validator_required,
         }
     }
 }
