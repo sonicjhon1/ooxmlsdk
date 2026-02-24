@@ -201,52 +201,24 @@ fn gen_schema_field_attributes(
 ) -> Result<Vec<Field>, BuildErrorReport> {
     let mut fields = Vec::with_capacity(schema_type.attributes.len());
 
-    fn resolved_schema_type_attribute_to_field(
-        ResolvedSchemaTypeAttribute {
-            field_attributes,
-            field_name_ident,
-            field_type_wrapped,
-            ..
-        }: ResolvedSchemaTypeAttribute,
-    ) -> Field {
-        parse_quote! {
-            #( #field_attributes )*
-            pub #field_name_ident: #field_type_wrapped
-        }
-    }
-
     if schema.needs_xmlns(schema_type) {
         fields.push(parse_quote!(pub xmlns: crate::common::XmlNamespace));
     }
 
-    if schema_type.base_class == "OpenXmlLeafTextElement"
-        || schema_type.base_class == "OpenXmlLeafElement"
-        || schema_type.base_class == "OpenXmlCompositeElement"
-        || schema_type.base_class == "CustomXmlElement"
-        || schema_type.base_class == "OpenXmlPartRootElement"
-        || schema_type.base_class == "SdtElement"
+    for resolved_schema_type_attribute in
+        schema_type.resolved_schema_type_attributes(gen_context)?
     {
-        for schema_type_attribute in schema_type.attributes.iter() {
-            fields.push(resolved_schema_type_attribute_to_field(
-                schema_type_attribute.resolved_schema_type_attribute(gen_context),
-            ));
-        }
-    } else if schema_type.is_derived {
-        let (type_base_class, _) = schema_type.split_name();
+        let ResolvedSchemaTypeAttribute {
+            field_attributes,
+            field_name_ident,
+            field_type_wrapped,
+            ..
+        } = resolved_schema_type_attribute;
 
-        let base_class_type = gen_context
-            .type_name_type_map
-            .try_get(format!("{type_base_class}/").as_str())?;
-
-        for schema_type_attribute in schema_type
-            .attributes
-            .iter()
-            .chain(base_class_type.attributes.iter())
-        {
-            fields.push(resolved_schema_type_attribute_to_field(
-                schema_type_attribute.resolved_schema_type_attribute(gen_context),
-            ));
-        }
+        fields.push(parse_quote! {
+            #( #field_attributes )*
+            pub #field_name_ident: #field_type_wrapped
+        });
     }
 
     return Ok(fields);

@@ -70,8 +70,30 @@ fn gen_schema_type(
         })
     }
 
-    for attr_schema in &schema_type.attributes {
-        xml_attr_writers.push(gen_attr_writer(attr_schema, gen_context, &xml_attr_ident));
+    for resolved_schema_type_attribute in
+        schema_type.resolved_schema_type_attributes(gen_context)?
+    {
+        let ResolvedSchemaTypeAttribute {
+            field_name_literal_string,
+            field_name_ident,
+            ..
+        } = resolved_schema_type_attribute;
+
+        if resolved_schema_type_attribute.is_validator_required {
+            xml_attr_writers.push(quote! {
+                #xml_attr_ident.push_str(
+                    &as_xml_attribute(#field_name_literal_string, &quick_xml::escape::escape(self.#field_name_ident.to_string()))
+                );
+            })
+        } else {
+            xml_attr_writers.push(quote! {
+              if let Some(#field_name_ident) = &self.#field_name_ident {
+                #xml_attr_ident.push_str(
+                    &as_xml_attribute(#field_name_literal_string, &quick_xml::escape::escape(#field_name_ident.to_string()))
+                );
+              }
+            })
+        };
     }
 
     let xml_inner_writer = gen_inner_writer(

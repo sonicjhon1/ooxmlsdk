@@ -82,52 +82,22 @@ fn gen_deserialize_attributes_fn(
     let mut matchers = vec![];
     let mut reassignments = vec![];
 
-    if schema_type.base_class == "OpenXmlLeafTextElement"
-        || schema_type.base_class == "OpenXmlLeafElement"
-        || schema_type.base_class == "OpenXmlCompositeElement"
-        || schema_type.base_class == "CustomXmlElement"
-        || schema_type.base_class == "OpenXmlPartRootElement"
-        || schema_type.base_class == "SdtElement"
-    {
-        for schema_type_attribute in &schema_type.attributes {
-            let t = TypeDeserializer::from_open_xml_schema_type_attribute(
-                schema_type_attribute,
-                &xml_reader_ident,
-                &attr_ident,
-                gen_context,
-            )?;
-
-            declarations.push(t.declaration);
-            matchers.extend(t.matchers);
-            reassignments.push(t.reassignment);
-        }
-    } else if schema_type.is_derived {
-        let (type_base_class, _) = schema_type.split_name();
-
-        let base_class_type = gen_context
-            .type_name_type_map
-            .try_get(format!("{type_base_class}/").as_str())?;
-
-        for schema_type_attribute in base_class_type
-            .attributes
-            .iter()
-            .chain(schema_type.attributes.iter())
-        {
-            let t = TypeDeserializer::from_open_xml_schema_type_attribute(
-                schema_type_attribute,
-                &xml_reader_ident,
-                &attr_ident,
-                gen_context,
-            )?;
-
-            declarations.push(t.declaration);
-            matchers.extend(t.matchers);
-            reassignments.push(t.reassignment);
-        }
-    };
-
     if schema.needs_xmlns(schema_type) {
         let t = TypeDeserializer::xmlns(&xml_reader_ident, &attr_ident);
+
+        declarations.push(t.declaration);
+        matchers.extend(t.matchers);
+        reassignments.push(t.reassignment);
+    }
+
+    for resolved_schema_type_attribute in
+        schema_type.resolved_schema_type_attributes(gen_context)?
+    {
+        let t = TypeDeserializer::from_resolved_schema_type_attribute(
+            &resolved_schema_type_attribute,
+            &xml_reader_ident,
+            &attr_ident,
+        )?;
 
         declarations.push(t.declaration);
         matchers.extend(t.matchers);
@@ -452,26 +422,26 @@ impl TypeDeserializer {
         }
     }
 
-    fn from_open_xml_schema_type_attribute(
-        schema_type_attribute: &OpenXmlSchemaTypeAttribute,
+    fn from_resolved_schema_type_attribute(
+        resolved_schema_type_attribute: &ResolvedSchemaTypeAttribute,
         xml_reader_ident: &Ident,
         attr_ident: &Ident,
-        gen_context: &GenContext,
     ) -> Result<Self, BuildErrorReport> {
         let ResolvedSchemaTypeAttribute {
+            raw_type,
             field_type,
             field_name_literal_string,
             field_name_literal_byte,
             field_name_ident,
             is_validator_required,
             ..
-        } = schema_type_attribute.resolved_schema_type_attribute(gen_context);
+        } = resolved_schema_type_attribute;
 
         let declaration = parse_quote! {
             let mut #field_name_ident = None;
         };
 
-        let matchers = match schema_type_attribute.r#type.as_ref().unwrap() {
+        let matchers = match raw_type.unwrap() {
             OpenXmlSchemaTypeAttributeType::ListValue { .. } => parse_quote! {
                 #field_name_literal_byte => {
                     #field_name_ident = Some(
@@ -517,7 +487,7 @@ impl TypeDeserializer {
             },
         };
 
-        let reassignment = if is_validator_required {
+        let reassignment = if *is_validator_required {
             parse_quote! {
                 self.#field_name_ident = #field_name_ident
                     .ok_or_else(|| SdkError::CommonError(#field_name_literal_string.to_string()))?;

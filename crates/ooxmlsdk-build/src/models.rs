@@ -1,7 +1,7 @@
 use crate::{
     error::BuildErrorReport,
     generator::context::{GenContext, check_office_version},
-    utils::{escape_snake_case, escape_upper_camel_case},
+    utils::{HashMapOpsError, escape_snake_case, escape_upper_camel_case},
 };
 use heck::ToUpperCamelCase;
 use proc_macro2::Literal;
@@ -219,14 +219,40 @@ impl OpenXmlSchemaType {
         ResolvedSchemaType::from_type(self)
     }
 
-    pub fn resolved_schema_type_attributes(
-        &self,
-        gen_context: &GenContext,
-    ) -> Vec<ResolvedSchemaTypeAttribute> {
-        self.attributes
-            .iter()
-            .map(|a| a.resolved_schema_type_attribute(gen_context))
-            .collect()
+    pub fn resolved_schema_type_attributes<'a>(
+        &'a self,
+        gen_context: &'a GenContext,
+    ) -> Result<Vec<ResolvedSchemaTypeAttribute<'a>>, BuildErrorReport> {
+        //TODO: Add xmlns here too
+
+        if self.base_class == "OpenXmlLeafTextElement"
+            || self.base_class == "OpenXmlLeafElement"
+            || self.base_class == "OpenXmlCompositeElement"
+            || self.base_class == "CustomXmlElement"
+            || self.base_class == "OpenXmlPartRootElement"
+            || self.base_class == "SdtElement"
+        {
+            Ok(self
+                .attributes
+                .iter()
+                .map(|a| a.resolved_schema_type_attribute(gen_context))
+                .collect())
+        } else if self.is_derived {
+            let (type_base_class, _) = self.split_name();
+
+            let base_class_type = gen_context
+                .type_name_type_map
+                .try_get(format!("{type_base_class}/").as_str())?;
+
+            Ok(self
+                .attributes
+                .iter()
+                .chain(base_class_type.attributes.iter())
+                .map(|a| a.resolved_schema_type_attribute(gen_context))
+                .collect())
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
@@ -400,15 +426,16 @@ impl OpenXmlSchemaTypeAttribute {
     }
 
     pub fn resolved_schema_type_attribute(
-        &self,
+        &'_ self,
         gen_context: &GenContext,
-    ) -> ResolvedSchemaTypeAttribute {
+    ) -> ResolvedSchemaTypeAttribute<'_> {
         ResolvedSchemaTypeAttribute::from_type_attribute(self, gen_context)
     }
 }
 
 #[derive(Clone)]
-pub struct ResolvedSchemaTypeAttribute {
+pub struct ResolvedSchemaTypeAttribute<'a> {
+    pub raw_type: Option<&'a OpenXmlSchemaTypeAttributeType>,
     pub field_attributes: Vec<Attribute>,
     pub field_name_literal_string: Literal,
     pub field_name_literal_byte: Literal,
@@ -418,9 +445,9 @@ pub struct ResolvedSchemaTypeAttribute {
     pub is_validator_required: bool,
 }
 
-impl ResolvedSchemaTypeAttribute {
+impl<'a> ResolvedSchemaTypeAttribute<'a> {
     pub fn from_type_attribute(
-        schema_type_attribute: &OpenXmlSchemaTypeAttribute,
+        schema_type_attribute: &'a OpenXmlSchemaTypeAttribute,
         gen_context: &GenContext,
     ) -> Self {
         let field_name_str = schema_type_attribute.as_name_str();
@@ -439,6 +466,7 @@ impl ResolvedSchemaTypeAttribute {
         let is_validator_required = schema_type_attribute.is_validator_required();
 
         Self {
+            raw_type: schema_type_attribute.r#type.as_ref(),
             field_attributes: parse_quote! {
                 #[doc = #doc_property_comments]
                 #[doc = ""]
