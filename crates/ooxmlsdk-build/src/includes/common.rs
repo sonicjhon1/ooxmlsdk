@@ -95,9 +95,11 @@ impl<'de> XmlReader<'de> for SliceReader<'de> {
 }
 
 pub trait Taggable {
+    const NAMESPACE_URI: Option<&str> = None;
     const PREFIXED_NAME: Option<&str> = None;
     const PREFIX: Option<&str> = None;
     const NAME: &str;
+    const NEEDS_HEADER: bool = false;
 
     fn prefixed_name_or_name() -> &'static str { Self::PREFIXED_NAME.unwrap_or(Self::NAME) }
 
