@@ -19,13 +19,13 @@ readme = "README.md"
 criterion = "0.8"
 heck = "0.5"
 ooxmlsdk-build = { path = "crates/ooxmlsdk-build" }
-proc-macro2 = "1.0.106"
+proc-macro2 = "1.0.107"
 quick-xml = "0.40"
-quote = "1.0.45"
+quote = "1.0.47"
 rootcause = "0.12"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-syn = "2.0.117"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+syn = "2.0.119"
 tempfile = "3.27"
 thiserror = "2.0"
 tracing = "0.1"

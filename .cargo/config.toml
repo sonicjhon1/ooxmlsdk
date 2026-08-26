@@ -1,5 +1,6 @@
 [unstable]
 codegen-backend = true
+min-publish-age = true
 
 [profile.dev]
 codegen-backend = "cranelift"
@@ -9,6 +10,9 @@ codegen-backend = "cranelift"
 
 [net]
 git-fetch-with-cli = true
+
+[registry]
+global-min-publish-age = "3 days"
 
 [build]
 rustflags = ["-Znext-solver=coherence", "-Zshare-generics=y", "-Zthreads=0"]
