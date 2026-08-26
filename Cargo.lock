@@ -483,7 +483,7 @@ version = "0.4.0"
 dependencies = [
  "ooxmlsdk-build",
  "quick-xml",
- "rootcause",
+ "rootcause 0.13.0",
  "rootcause-backtrace",
  "thiserror",
  "tracing",
@@ -501,10 +501,10 @@ dependencies = [
  "quick-xml",
  "quote",
  "rayon",
- "rootcause",
+ "rootcause 0.13.0",
  "serde",
  "serde_json",
- "syn 2.0.119",
+ "syn 3.0.3",
  "tempfile",
  "thiserror",
  "tracing",
@@ -566,9 +566,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.40.1"
+version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2474bd2e5029e7ccb6abb2ba48cf2383a333851dedf495901544281590c7da7f"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
  "serde",
@@ -646,7 +646,20 @@ checksum = "4fc4bd36159c7ce180fe2de1e5371ef107a2885f0048430f631e78202e2255d4"
 dependencies = [
  "hashbrown 0.16.1",
  "indexmap",
- "rootcause-internals",
+ "rootcause-internals 0.12.1",
+ "rustc-hash",
+ "triomphe",
+]
+
+[[package]]
+name = "rootcause"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b660d9968fae12f4e691f2b2be5d9a3a6de875300c682e8d2cb89a618dd60875"
+dependencies = [
+ "hashbrown 0.17.1",
+ "indexmap",
+ "rootcause-internals 0.13.0",
  "rustc-hash",
  "triomphe",
 ]
@@ -659,7 +672,7 @@ checksum = "46da9b4054a7afe36327e817a2bf5648a4f49576f2adbe1cf5ba86e89d163158"
 dependencies = [
  "backtrace",
  "regex",
- "rootcause",
+ "rootcause 0.12.1",
  "unicode-ident",
 ]
 
@@ -668,6 +681,15 @@ name = "rootcause-internals"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d0df4f84d119d09b5c9c9e8db0fe9bfb5b47b04d0bb95b0763cf81bd9baa559"
+dependencies = [
+ "triomphe",
+]
+
+[[package]]
+name = "rootcause-internals"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0184f6fcff3b58b7c963aee6e3cc915c04331aa6eef974f79d7d44d21e246c24"
 dependencies = [
  "triomphe",
 ]
